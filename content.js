@@ -16,7 +16,7 @@ const TRANSLATE_BTN_CLASS = "ai-translate-btn";
 const TRANSLATE_RESULT_CLASS = "ai-translate-result";
 const TRANSLATE_LOADING_CLASS = "ai-translate-loading";
 const SEND_MESSAGE_RETRY_DELAY_MS = 180;
-const SEND_MESSAGE_MAX_RETRIES = 1;
+const SEND_MESSAGE_MAX_RETRIES = 1; // 1 retry after the initial attempt (2 attempts total)
 const SELECTION_STREAM_TIMEOUT_MS = 45000;
 const DEFAULT_CONFIG = {
   targetLang: "en",
