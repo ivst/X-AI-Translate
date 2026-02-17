@@ -71,6 +71,7 @@
     "status_saved": "تم الحفظ.",
     "status_required": "عنوان API والنموذج مطلوبان.",
     "status_set_openrouter_key": "حدّد مفتاح OpenRouter أولًا.",
+    "status_set_yandex_key": "حدّد مفتاح YandexGPT أولًا.",
     "status_refreshing": "جارٍ تحديث النماذج...",
     "status_no_models": "لم يتم العثور على نماذج.",
     "status_models_updated": "تم تحديث النماذج."
@@ -106,6 +107,7 @@
     "status_saved": "已保存。",
     "status_required": "API URL 和模型为必填。",
     "status_set_openrouter_key": "请先设置 OpenRouter API 密钥。",
+    "status_set_yandex_key": "请先设置 YandexGPT API 密钥。",
     "status_refreshing": "正在刷新模型...",
     "status_no_models": "未返回模型。",
     "status_models_updated": "模型已更新。"
@@ -141,6 +143,7 @@
     "status_saved": "Saved.",
     "status_required": "API URL and model are required.",
     "status_set_openrouter_key": "Set OpenRouter API key first.",
+    "status_set_yandex_key": "Set YandexGPT API key first.",
     "status_refreshing": "Refreshing models...",
     "status_no_models": "No models returned.",
     "status_models_updated": "Models updated."
@@ -176,6 +179,7 @@
     "status_saved": "Enregistré.",
     "status_required": "L'URL API et le modèle sont requis.",
     "status_set_openrouter_key": "Définissez d'abord la clé API OpenRouter.",
+    "status_set_yandex_key": "Définissez d'abord la clé API YandexGPT.",
     "status_refreshing": "Actualisation des modèles...",
     "status_no_models": "Aucun modèle trouvé.",
     "status_models_updated": "Modèles mis à jour."
@@ -211,6 +215,7 @@
     "status_saved": "Gespeichert.",
     "status_required": "API-URL und Modell sind erforderlich.",
     "status_set_openrouter_key": "Zuerst OpenRouter-API-Schlüssel setzen.",
+    "status_set_yandex_key": "Zuerst YandexGPT-API-Schlüssel setzen.",
     "status_refreshing": "Modelle werden aktualisiert...",
     "status_no_models": "Keine Modelle gefunden.",
     "status_models_updated": "Modelle aktualisiert."
@@ -246,6 +251,7 @@
     "status_saved": "Αποθηκεύτηκε.",
     "status_required": "Απαιτούνται URL API και μοντέλο.",
     "status_set_openrouter_key": "Ορίστε πρώτα το κλειδί API OpenRouter.",
+    "status_set_yandex_key": "Ορίστε πρώτα το κλειδί API YandexGPT.",
     "status_refreshing": "Ανανέωση μοντέλων...",
     "status_no_models": "Δεν βρέθηκαν μοντέλα.",
     "status_models_updated": "Τα μοντέλα ενημερώθηκαν."
@@ -281,6 +287,7 @@
     "status_saved": "נשמר.",
     "status_required": "נדרשים URL של API ומודל.",
     "status_set_openrouter_key": "יש להגדיר קודם מפתח OpenRouter.",
+    "status_set_yandex_key": "יש להגדיר קודם מפתח YandexGPT.",
     "status_refreshing": "מרענן מודלים...",
     "status_no_models": "לא נמצאו מודלים.",
     "status_models_updated": "המודלים עודכנו."
@@ -316,6 +323,7 @@
     "status_saved": "Salvato.",
     "status_required": "URL API e modello sono obbligatori.",
     "status_set_openrouter_key": "Imposta prima la chiave API OpenRouter.",
+    "status_set_yandex_key": "Imposta prima la chiave API YandexGPT.",
     "status_refreshing": "Aggiornamento modelli...",
     "status_no_models": "Nessun modello trovato.",
     "status_models_updated": "Modelli aggiornati."
@@ -351,6 +359,7 @@
     "status_saved": "保存しました。",
     "status_required": "API URL とモデルは必須です。",
     "status_set_openrouter_key": "先に OpenRouter API キーを設定してください。",
+    "status_set_yandex_key": "先に YandexGPT API キーを設定してください。",
     "status_refreshing": "モデルを更新中...",
     "status_no_models": "モデルが返されませんでした。",
     "status_models_updated": "モデルを更新しました。"
@@ -386,6 +395,7 @@
     "status_saved": "저장되었습니다.",
     "status_required": "API URL과 모델이 필요합니다.",
     "status_set_openrouter_key": "먼저 OpenRouter API 키를 입력하세요.",
+    "status_set_yandex_key": "먼저 YandexGPT API 키를 입력하세요.",
     "status_refreshing": "모델 목록을 새로고침하는 중...",
     "status_no_models": "반환된 모델이 없습니다.",
     "status_models_updated": "모델이 업데이트되었습니다."
@@ -421,6 +431,7 @@
     "status_saved": "Salvo.",
     "status_required": "URL da API e modelo são obrigatórios.",
     "status_set_openrouter_key": "Defina primeiro a chave API do OpenRouter.",
+    "status_set_yandex_key": "Defina primeiro a chave API do YandexGPT.",
     "status_refreshing": "Atualizando modelos...",
     "status_no_models": "Nenhum modelo encontrado.",
     "status_models_updated": "Modelos atualizados."
@@ -456,6 +467,7 @@
     "status_saved": "Сохранено.",
     "status_required": "Нужны API URL и модель.",
     "status_set_openrouter_key": "Сначала укажите ключ OpenRouter.",
+    "status_set_yandex_key": "Сначала укажите ключ YandexGPT.",
     "status_refreshing": "Обновление списка...",
     "status_no_models": "Модели не найдены.",
     "status_models_updated": "Список обновлён."
@@ -491,6 +503,7 @@
     "status_saved": "Guardado.",
     "status_required": "Se requieren URL API y modelo.",
     "status_set_openrouter_key": "Primero establece la clave API de OpenRouter.",
+    "status_set_yandex_key": "Primero establece la clave API de YandexGPT.",
     "status_refreshing": "Actualizando modelos...",
     "status_no_models": "No se encontraron modelos.",
     "status_models_updated": "Modelos actualizados."
@@ -526,6 +539,7 @@
     "status_saved": "บันทึกแล้ว",
     "status_required": "ต้องระบุ API URL และโมเดล",
     "status_set_openrouter_key": "ตั้งค่า OpenRouter API key ก่อน",
+    "status_set_yandex_key": "ตั้งค่า YandexGPT API key ก่อน",
     "status_refreshing": "กำลังรีเฟรชโมเดล...",
     "status_no_models": "ไม่พบโมเดล",
     "status_models_updated": "อัปเดตรายการโมเดลแล้ว"
@@ -561,6 +575,7 @@
     "status_saved": "Kaydedildi.",
     "status_required": "API URL'si ve model gerekli.",
     "status_set_openrouter_key": "Önce OpenRouter API anahtarını girin.",
+    "status_set_yandex_key": "Önce YandexGPT API anahtarını girin.",
     "status_refreshing": "Modeller yenileniyor...",
     "status_no_models": "Model bulunamadı.",
     "status_models_updated": "Modeller güncellendi."
@@ -596,6 +611,7 @@
     "status_saved": "Збережено.",
     "status_required": "Потрібні API URL і модель.",
     "status_set_openrouter_key": "Спочатку вкажіть ключ OpenRouter.",
+    "status_set_yandex_key": "Спочатку вкажіть ключ YandexGPT.",
     "status_refreshing": "Оновлення списку...",
     "status_no_models": "Моделі не знайдено.",
     "status_models_updated": "Список оновлено."

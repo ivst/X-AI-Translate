@@ -263,6 +263,7 @@ function getLocaleStrings(lang) {
 }
 
 function applyTranslations(lang) {
+  document.documentElement.lang = lang || "en";
   const strings = getLocaleStrings(lang);
   document.querySelectorAll("[data-i18n]").forEach((el) => {
     const key = el.getAttribute("data-i18n");
@@ -1196,13 +1197,14 @@ refreshOpenrouterBtn.addEventListener("click", async () => {
 });
 
 refreshYandexBtn.addEventListener("click", async () => {
+  const strings = getLocaleStrings(uiLangSelect.value);
   const key = apiKeyInput.value.trim();
   if (!key) {
-    setStatus("Set Yandex API key first.", true);
+    setStatus(strings.status_set_yandex_key || "Set YandexGPT API key first.", true);
     return;
   }
   try {
-    setStatus("Refreshing models...", false);
+    setStatus(strings.status_refreshing || "Refreshing models...", false);
     const models = await getYandexModels(
       apiUrlInput.value,
       key,
