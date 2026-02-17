@@ -1,0 +1,114 @@
+.ai-translate-btn {
+  margin-top: 6px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  border: 1px solid #ccc;
+  background: #fff;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.ai-translate-btn.ai-translate-loading {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.ai-translate-result {
+  margin-top: 6px;
+  padding: 8px;
+  border-left: 3px solid #1d9bf0;
+  background: #f5f8fa;
+  font-size: 13px;
+  white-space: pre-wrap;
+}
+
+.ai-translate-overlay {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  max-width: 320px;
+  padding: 10px 12px;
+  background: #111;
+  color: #fff;
+  border-radius: 8px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+  font-size: 12px;
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  z-index: 999999;
+  white-space: pre-wrap;
+}
+
+.ai-translate-overlay-content {
+  white-space: pre-wrap;
+}
+
+.ai-translate-overlay-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+
+.ai-translate-overlay-actions button {
+  background: #222;
+  color: #fff;
+  border: 1px solid #444;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ai-translate-overlay-actions button:hover {
+  background: #2c2c2c;
+}
+
+.ai-translate-overlay.centered {
+  left: 50%;
+  right: auto;
+  bottom: auto;
+  top: 50%;
+  max-width: min(640px, 90vw);
+  transform: translate(-50%, -46%);
+  text-align: left;
+}
+
+.ai-translate-overlay.visible {
+  opacity: 0.95;
+  transform: translateY(0);
+}
+
+.ai-translate-overlay.centered.visible {
+  transform: translate(-50%, -50%);
+}
+
+.ai-translate-selection-btn {
+  position: fixed;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  border: 0;
+  background-color: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  opacity: 1;
+  padding: 0;
+  cursor: pointer;
+  z-index: 999999;
+  display: none;
+  pointer-events: auto;
+  align-items: center;
+  justify-content: center;
+}
+
+.ai-translate-selection-btn.ai-translate-loading {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.ai-translate-selection-btn img {
+  width: 16px;
+  height: 16px;
+  display: block;
+}

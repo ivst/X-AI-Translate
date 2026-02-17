@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI Translate Settings</title>
+    <style>
+      :root {
+        --bg: #f5f2ea;
+        --panel: #ffffff;
+        --ink: #1c1b19;
+        --muted: #6f6b63;
+        --accent: #1d9bf0;
+        --accent-dark: #1577b8;
+        --ring: rgba(29, 155, 240, 0.25);
+      }
+      body {
+        font-family: "Space Grotesk", "Segoe UI", sans-serif;
+        margin: 0;
+        background: radial-gradient(1200px 600px at 10% -10%, #e5f3ff 0%, rgba(229, 243, 255, 0) 60%),
+          radial-gradient(900px 500px at 100% 0%, #fff0d9 0%, rgba(255, 240, 217, 0) 55%),
+          var(--bg);
+        color: var(--ink);
+      }
+      .page {
+        max-width: 880px;
+        margin: 32px auto;
+        padding: 0 20px 40px;
+      }
+      .hero {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        margin-bottom: 18px;
+      }
+      .logo {
+        width: 44px;
+        height: 44px;
+        border-radius: 12px;
+        box-shadow: 0 10px 25px rgba(29, 155, 240, 0.25);
+      }
+      h1 {
+        font-size: 22px;
+        margin: 0;
+      }
+      .subtitle {
+        font-size: 13px;
+        color: var(--muted);
+        margin-top: 4px;
+      }
+      .panel {
+        background: var(--panel);
+        border-radius: 16px;
+        padding: 18px 18px 10px;
+        box-shadow: 0 12px 30px rgba(18, 18, 18, 0.08);
+        border: 1px solid rgba(0, 0, 0, 0.04);
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 12px 16px;
+      }
+      label {
+        display: block;
+        font-size: 12px;
+        margin: 10px 0 4px;
+        color: var(--muted);
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+      }
+      input, select {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 10px 12px;
+        font-size: 14px;
+        border-radius: 10px;
+        border: 1px solid #e2ddd3;
+        background: #fffdf7;
+        color: var(--ink);
+        outline: none;
+        transition: box-shadow 0.2s ease, border-color 0.2s ease;
+      }
+      input:focus, select:focus {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 4px var(--ring);
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .row input[type="checkbox"] {
+        width: auto;
+      }
+      button {
+        margin-top: 12px;
+        padding: 10px 16px;
+        font-size: 14px;
+        cursor: pointer;
+        border-radius: 12px;
+        border: 0;
+        background: var(--accent);
+        color: #fff;
+        box-shadow: 0 10px 20px rgba(29, 155, 240, 0.2);
+        transition: transform 0.15s ease, background 0.2s ease;
+      }
+      button:hover {
+        background: var(--accent-dark);
+        transform: translateY(-1px);
+      }
+      #modelCustom {
+        display: none;
+        margin-top: 6px;
+      }
+      .hint {
+        font-size: 11px;
+        color: var(--muted);
+        margin-top: 6px;
+      }
+      .setup-note {
+        grid-column: 1 / -1;
+        font-size: 12px;
+        color: var(--muted);
+        line-height: 1.45;
+        background: #fffaf0;
+        border: 1px solid #efe1c7;
+        border-radius: 10px;
+        padding: 10px 12px;
+      }
+      .setup-note a {
+        color: #0d6fb8;
+      }
+      .setup-note-warning {
+        display: block;
+        margin-top: 6px;
+        color: #8b4d1f;
+      }
+      .status {
+        margin-top: 8px;
+        font-size: 12px;
+      }
+      .project-link {
+        margin-top: 14px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .project-link a {
+        color: #0d6fb8;
+      }
+      .toggle-group {
+        margin-top: 14px;
+        background: #fffdf7;
+        border: 1px solid #e2ddd3;
+        border-radius: 10px;
+        padding: 8px 12px;
+        width: 100%;
+        box-sizing: border-box;
+      }
+      .toggle-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-top: 8px;
+        justify-content: flex-start;
+        text-align: left;
+        width: 100%;
+      }
+      .toggle-row:first-child {
+        margin-top: 0;
+      }
+      .toggle-row input[type="checkbox"] {
+        width: auto;
+        height: auto;
+        padding: 0;
+        margin: 0;
+        border: 0;
+        background: transparent;
+        box-shadow: none;
+        flex: 0 0 auto;
+        accent-color: var(--accent);
+      }
+      .toggle-row label {
+        margin: 0;
+        text-transform: none;
+        letter-spacing: 0;
+        line-height: 1.35;
+        color: var(--ink);
+        font-size: 14px;
+        flex: 1 1 auto;
+        cursor: pointer;
+      }
+      .sync-keys-row label {
+        flex: 0 1 auto;
+      }
+      .sync-help {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex: 0 0 auto;
+        width: 18px;
+        height: 18px;
+        border-radius: 999px;
+        border: 1px solid #c9bda9;
+        color: #6f6b63;
+        font-size: 12px;
+        font-weight: 700;
+        cursor: help;
+        position: relative;
+        user-select: none;
+        margin-left: 2px;
+      }
+      .sync-help::after {
+        content: attr(data-tooltip);
+        position: absolute;
+        right: 0;
+        top: calc(100% + 8px);
+        transform: none;
+        min-width: 260px;
+        max-width: 360px;
+        white-space: normal;
+        background: #2b2a28;
+        color: #fff;
+        border-radius: 8px;
+        padding: 8px 10px;
+        font-size: 12px;
+        line-height: 1.35;
+        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.25);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.15s ease;
+        z-index: 20;
+      }
+      .sync-help:hover::after,
+      .sync-help:focus-visible::after {
+        opacity: 1;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <div class="hero">
+        <img class="logo" src="icon128.png" alt="AI Translate" />
+        <div>
+          <h1 data-i18n="title">AI Translate Settings</h1>
+          <div class="subtitle" data-i18n="subtitle">Configure providers, languages, and output behavior.</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="setup-note" style="margin-bottom:12px;">
+          <span id="setupNoteIntro">Registration and an API key are required to use the extension with any OpenAI-compatible provider.</span></br>
+          <span id="setupNoteLinksLabel">Official key setup:</span>
+          <a id="setupLinkOpenAI" href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">OpenAI</a>,
+          <a id="setupLinkClaude" href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer">Claude</a>,
+          <a id="setupLinkGemini" href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer">Gemini</a>,
+          <a id="setupLinkDeepSeek" href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener noreferrer">DeepSeek</a>,
+          <a id="setupLinkOpenRouter" href="https://openrouter.ai/settings/keys" target="_blank" rel="noopener noreferrer">OpenRouter</a>,
+          <a id="setupLinkYandex" href="https://yandex.cloud/en/docs/ai-studio/operations/get-api-key" target="_blank" rel="noopener noreferrer">YandexGPT</a>.
+          <span id="setupNoteWarning" class="setup-note-warning">For security, create a separate API key with minimal permissions and a limited budget.</span>
+        </div>
+
+        <div class="grid">
+          <div>
+            <label for="uiLang" data-i18n="ui_lang">UI language</label>
+            <select id="uiLang"></select>
+          </div>
+          <div>
+            <label for="provider" data-i18n="provider">Provider</label>
+            <select id="provider">
+              <option value="openai">OpenAI</option>
+              <option value="claude">Claude</option>
+              <option value="gemini">Gemini</option>
+              <option value="deepseek">DeepSeek</option>
+              <option value="yandexgpt">YandexGPT</option>
+              <option value="openrouter">OpenRouter</option>
+              <option value="custom">Custom</option>
+            </select>
+          </div>
+
+          <div>
+            <label for="apiUrl" data-i18n="api_base_url">API Base URL (OpenAI-compatible)</label>
+            <input id="apiUrl" type="text" placeholder="https://api.openai.com/v1" data-i18n-placeholder="api_base_url_placeholder" />
+          </div>
+
+          <div>
+            <label for="apiKey" data-i18n="api_key">API Key</label>
+            <input id="apiKey" type="password" placeholder="sk-..." data-i18n-placeholder="api_key_placeholder" />
+          </div>
+
+          <div id="yandexControls" style="display:none;">
+            <label for="yandexFolderId">Yandex Folder ID</label>
+            <input id="yandexFolderId" type="text" placeholder="b1gxxxxxxxxxxxxxxx" />
+            <button id="refreshYandex" type="button" style="margin-top:8px;">Refresh Yandex models</button>
+            <div class="hint">Required if model is not a full <code>gpt://...</code> URI.</div>
+          </div>
+
+          <div>
+            <label for="model" data-i18n="model">Model</label>
+            <select id="model"></select>
+            <input id="modelCustom" type="text" placeholder="Custom model id" data-i18n-placeholder="model_custom_placeholder" />
+          </div>
+          <div id="openrouterControls" style="display:none;">
+            <label data-i18n="openrouter_models">OpenRouter models</label>
+            <div class="row" style="align-items:center;">
+              <label for="openrouterSource" data-i18n="openrouter_source" style="text-transform:none;letter-spacing:0;margin:0;">Source</label>
+              <select id="openrouterSource" style="width:auto;min-width:160px;">
+                <option value="user" data-i18n="openrouter_source_user">User models</option>
+                <option value="public" data-i18n="openrouter_source_public">All public models</option>
+              </select>
+            </div>
+            <div class="row" style="margin-top:6px;">
+              <input id="openrouterFreeOnly" type="checkbox" />
+              <label for="openrouterFreeOnly" data-i18n="openrouter_free_only" style="text-transform:none;letter-spacing:0;">Free only</label>
+            </div>
+            <button id="refreshOpenrouter" type="button" style="margin-top:8px;" data-i18n="refresh_list">Refresh list</button>
+            <div class="hint" data-i18n="openrouter_hint">Uses your OpenRouter API key to load available models.</div>
+          </div>
+
+          <div>
+            <label for="targetLang" data-i18n="target_lang">Target language</label>
+            <select id="targetLang">
+      <option value="ar">Arabic</option>
+      <option value="zh">Chinese</option>
+      <option value="en">English</option>
+      <option value="fr">French</option>
+      <option value="de">German</option>
+      <option value="el">Greek</option>
+      <option value="he">Hebrew</option>
+      <option value="it">Italian</option>
+      <option value="ja">Japanese</option>
+      <option value="ko">Korean</option>
+      <option value="pt">Portuguese</option>
+      <option value="ru">Russian</option>
+      <option value="es">Spanish</option>
+      <option value="th">Thai</option>
+      <option value="tr">Turkish</option>
+      <option value="uk">Ukrainian</option>
+            </select>
+          </div>
+
+          <div>
+            <label for="sourceLang" data-i18n="source_lang">Source language</label>
+            <select id="sourceLang">
+      <option value="auto">Autodetect</option>
+      <option value="ar">Arabic</option>
+      <option value="zh">Chinese</option>
+      <option value="en">English</option>
+      <option value="fr">French</option>
+      <option value="de">German</option>
+      <option value="el">Greek</option>
+      <option value="he">Hebrew</option>
+      <option value="it">Italian</option>
+      <option value="ja">Japanese</option>
+      <option value="ko">Korean</option>
+      <option value="pt">Portuguese</option>
+      <option value="ru">Russian</option>
+      <option value="es">Spanish</option>
+      <option value="th">Thai</option>
+      <option value="tr">Turkish</option>
+      <option value="uk">Ukrainian</option>
+            </select>
+          </div>
+
+          <div>
+            <label for="overlayMode" data-i18n="output_mode">Context menu output</label>
+            <select id="overlayMode">
+              <option value="toast" data-i18n="output_toast">Bottom-right popup</option>
+              <option value="center" data-i18n="output_center">Centered modal</option>
+            </select>
+          </div>
+
+          <div>
+            <label for="overlayDuration" data-i18n="overlay_duration">Overlay duration (seconds)</label>
+            <input id="overlayDuration" type="number" min="1" max="30" step="1" />
+          </div>
+        </div>
+
+        <div class="toggle-group">
+          <div class="toggle-row">
+            <input id="selectionShortcut" type="checkbox" />
+            <label for="selectionShortcut" data-i18n="selection_shortcut">Show translate button near selection</label>
+          </div>
+          <div class="toggle-row sync-keys-row">
+            <input id="syncApiKeys" type="checkbox" />
+            <label id="syncApiKeysLabel" for="syncApiKeys">Sync API keys across devices</label>
+            <span
+              id="syncApiKeysHelp"
+              class="sync-help"
+              role="button"
+              tabindex="0"
+              aria-label="Security details"
+              data-tooltip="Less secure: API keys are synchronized via Chrome account."
+            >?</span>
+          </div>
+        </div>
+
+        <button id="save" data-i18n="save">Save</button>
+        <div class="hint" data-i18n="changes_hint">Changes apply instantly after saving.</div>
+        <div id="status" class="status"></div>
+        <div class="project-link">
+          GitHub:
+          <a href="https://github.com/ivst/X-AI-Translate" target="_blank" rel="noopener noreferrer">https://github.com/ivst/X-AI-Translate</a>
+        </div>
+      </div>
+    </div>
+
+    <script src="i18n.js"></script>
+    <script src="options.js"></script>
+  </body>
+</html>
