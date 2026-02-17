@@ -117,6 +117,16 @@ function sendToTab(tabId, payload) {
   });
 }
 
+function ensureTabReady(tabId, tabUrl) {
+  if (!tabId || isUnsupportedTabUrl(tabUrl)) return;
+  chrome.tabs.sendMessage(tabId, { action: "aiTranslatePing" }, async () => {
+    if (!chrome.runtime.lastError) {
+      return;
+    }
+    await ensureContentScript(tabId);
+  });
+}
+
 function showFallback(text, isError, tabId, allowOverlayFallback) {
   const payload = isError
     ? { lastError: text }
@@ -144,6 +154,24 @@ chrome.runtime.onInstalled.addListener(() => {
     title: "Translate selection with AI",
     contexts: ["selection"]
   });
+});
+
+chrome.tabs.onActivated.addListener(({ tabId }) => {
+  if (!tabId) return;
+  chrome.tabs.get(tabId, (tab) => {
+    if (chrome.runtime.lastError) return;
+    ensureTabReady(tabId, tab?.url);
+  });
+});
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status !== "complete") return;
+  ensureTabReady(tabId, tab?.url);
+});
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  injectionInFlight.delete(tabId);
+  injectionCooldownUntil.delete(tabId);
 });
 
 function buildPrompt(text, targetLang, sourceLang) {
