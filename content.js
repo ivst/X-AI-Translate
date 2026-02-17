@@ -106,7 +106,11 @@ function isPortClosedMessage(message) {
 
 function formatActionableError(strings, err) {
   const msg = String(err?.message || err || "");
-  if (/Extension context (unavailable|invalidated)/i.test(msg)) {
+  const lowerMsg = msg.toLowerCase();
+  if (
+    lowerMsg.includes("extension context unavailable") ||
+    lowerMsg.includes("extension context invalidated")
+  ) {
     return `${strings.errorPrefix}: extension context unavailable. Try again or reload this tab.`;
   }
   if (isRecoverableRuntimeMessage(msg)) {
