@@ -95,13 +95,14 @@ function getExtensionUrlSafe(path) {
 function isRecoverableRuntimeMessage(message) {
   const msg = String(message || "").toLowerCase();
   return (
-    msg.includes("could not establish connection. receiving end does not exist.")
+    msg.includes("could not establish connection") ||
+    msg.includes("receiving end does not exist")
   );
 }
 
 function isPortClosedMessage(message) {
   const msg = String(message || "").toLowerCase();
-  return msg.includes("the message port closed before a response was received");
+  return msg.includes("message port closed") && msg.includes("response");
 }
 
 function formatActionableError(strings, err) {

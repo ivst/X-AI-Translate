@@ -35,6 +35,8 @@ function notify(title, message) {
 const injectionInFlight = new Map();
 const injectionCooldownUntil = new Map();
 const INJECTION_COOLDOWN_MS = 1500;
+const tabReadyLastCheckAt = new Map();
+const TAB_READY_CHECK_COOLDOWN_MS = 10000;
 
 function ensureContentScript(tabId) {
   if (!tabId) {
@@ -119,6 +121,10 @@ function sendToTab(tabId, payload) {
 
 function ensureTabReady(tabId, tabUrl) {
   if (!tabId || isUnsupportedTabUrl(tabUrl)) return;
+  const now = Date.now();
+  const lastCheck = tabReadyLastCheckAt.get(tabId) || 0;
+  if (now - lastCheck < TAB_READY_CHECK_COOLDOWN_MS) return;
+  tabReadyLastCheckAt.set(tabId, now);
   chrome.tabs.sendMessage(tabId, { action: "aiTranslatePing" }, async () => {
     if (!chrome.runtime.lastError) {
       return;
@@ -165,13 +171,14 @@ chrome.tabs.onActivated.addListener(({ tabId }) => {
 });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status !== "complete") return;
-  ensureTabReady(tabId, tab?.url);
+  if (changeInfo.status !== "complete" || !changeInfo.url) return;
+  ensureTabReady(tabId, changeInfo.url || tab?.url);
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
   injectionInFlight.delete(tabId);
   injectionCooldownUntil.delete(tabId);
+  tabReadyLastCheckAt.delete(tabId);
 });
 
 function buildPrompt(text, targetLang, sourceLang) {
