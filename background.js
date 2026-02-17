@@ -32,37 +32,70 @@ function notify(title, message) {
   });
 }
 
+const injectionInFlight = new Map();
+const injectionCooldownUntil = new Map();
+const INJECTION_COOLDOWN_MS = 1500;
+
 function ensureContentScript(tabId) {
-  return new Promise((resolve) => {
-    if (!tabId) {
-      resolve(false);
-      return;
-    }
+  if (!tabId) {
+    return Promise.resolve(false);
+  }
+  const now = Date.now();
+  const cooldown = injectionCooldownUntil.get(tabId) || 0;
+  if (cooldown > now) {
+    return Promise.resolve(false);
+  }
+  const existing = injectionInFlight.get(tabId);
+  if (existing) {
+    return existing;
+  }
+
+  const task = new Promise((resolve) => {
+    let resolved = false;
+    const finish = (ok) => {
+      if (resolved) return;
+      resolved = true;
+      if (!ok) {
+        injectionCooldownUntil.set(tabId, Date.now() + INJECTION_COOLDOWN_MS);
+      } else {
+        injectionCooldownUntil.delete(tabId);
+      }
+      resolve(ok);
+    };
+
     chrome.scripting.insertCSS(
       { target: { tabId }, files: ["styles.css"] },
       () => {
         if (chrome.runtime.lastError) {
-          resolve(false);
+          finish(false);
           return;
         }
         chrome.scripting.executeScript(
           { target: { tabId }, files: ["content.js"] },
           () => {
             if (chrome.runtime.lastError) {
-              resolve(false);
+              finish(false);
               return;
             }
-            resolve(true);
+            finish(true);
           }
         );
       }
     );
+  }).finally(() => {
+    injectionInFlight.delete(tabId);
   });
+
+  injectionInFlight.set(tabId, task);
+  return task;
 }
 
-async function sendToTab(tabId, payload) {
-  if (!tabId) return false;
+function sendToTab(tabId, payload) {
   return new Promise((resolve) => {
+    if (!tabId) {
+      resolve(false);
+      return;
+    }
     chrome.tabs.sendMessage(tabId, payload, async () => {
       if (!chrome.runtime.lastError) {
         resolve(true);

@@ -1200,8 +1200,7 @@ refreshYandexBtn.addEventListener("click", async () => {
   const strings = getLocaleStrings(uiLangSelect.value);
   const key = apiKeyInput.value.trim();
   if (!key) {
-    const hint = (strings.status_set_openrouter_key || "Set API key first.").replace(/OpenRouter/gi, "YandexGPT");
-    setStatus(hint, true);
+    setStatus(strings.status_set_yandex_key || "Set YandexGPT API key first.", true);
     return;
   }
   try {
