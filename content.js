@@ -621,7 +621,13 @@ function showGlobalOverlay(text, finalize) {
 
 if (isExtensionContextValid()) {
   try {
-    chrome.runtime.onMessage.addListener((message) => {
+    chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+      if (message?.action === "aiTranslatePing") {
+        if (typeof sendResponse === "function") {
+          sendResponse({ ok: true });
+        }
+        return;
+      }
       if (message?.action === "showTranslation" && message.text) {
         showGlobalOverlay(message.text, true);
       }

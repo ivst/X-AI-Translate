@@ -125,12 +125,7 @@ function ensureTabReady(tabId, tabUrl) {
   const lastCheck = tabReadyLastCheckAt.get(tabId) || 0;
   if (now - lastCheck < TAB_READY_CHECK_COOLDOWN_MS) return;
   tabReadyLastCheckAt.set(tabId, now);
-  chrome.tabs.sendMessage(tabId, { action: "aiTranslatePing" }, async () => {
-    if (!chrome.runtime.lastError) {
-      return;
-    }
-    await ensureContentScript(tabId);
-  });
+  sendToTab(tabId, { action: "aiTranslatePing" }).then(() => {});
 }
 
 function showFallback(text, isError, tabId, allowOverlayFallback) {
