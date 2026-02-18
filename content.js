@@ -15,6 +15,8 @@ const INLINE_TRANSLATION_TEXT_SELECTOR = `${TWEET_TEXT_SELECTOR}, ${YOUTUBE_COMM
 const TRANSLATE_BTN_CLASS = "ai-translate-btn";
 const TRANSLATE_RESULT_CLASS = "ai-translate-result";
 const TRANSLATE_LOADING_CLASS = "ai-translate-loading";
+const SEND_MESSAGE_RETRY_DELAY_MS = 180;
+const SEND_MESSAGE_MAX_RETRIES = 1; // 1 retry after the initial attempt (2 attempts total)
 const SELECTION_STREAM_TIMEOUT_MS = 45000;
 const DEFAULT_CONFIG = {
   targetLang: "en",
@@ -90,7 +92,35 @@ function getExtensionUrlSafe(path) {
   }
 }
 
-function sendMessageSafe(message, callback) {
+function isRecoverableRuntimeMessage(message) {
+  const msg = String(message || "").toLowerCase();
+  return (
+    msg.includes("could not establish connection") ||
+    msg.includes("receiving end does not exist")
+  );
+}
+
+function isPortClosedMessage(message) {
+  const msg = String(message || "").toLowerCase();
+  return msg.includes("message port closed") && msg.includes("response");
+}
+
+function formatActionableError(strings, err) {
+  const msg = String(err?.message || err || "");
+  const lowerMsg = msg.toLowerCase();
+  if (
+    lowerMsg.includes("extension context unavailable") ||
+    lowerMsg.includes("extension context invalidated")
+  ) {
+    return `${strings.errorPrefix}: ${strings.extensionContextUnavailable || msg}`;
+  }
+  if (isRecoverableRuntimeMessage(msg)) {
+    return `${strings.errorPrefix}: ${strings.temporaryConnectionIssue || msg}`;
+  }
+  return `${strings.errorPrefix}: ${msg}`;
+}
+
+function sendMessageSafe(message, callback, attempt = 0) {
   const runtime = getRuntimeSafe();
   if (!runtime || !runtime.id) {
     if (typeof callback === "function") {
@@ -104,10 +134,17 @@ function sendMessageSafe(message, callback) {
         const lastError = chrome?.runtime?.lastError;
         if (lastError) {
           const msg = String(lastError.message || "");
-          if (msg.includes("message port closed before a response was received")) {
+          const isStreamMessage = message?.action === "translateStream";
+          if (isStreamMessage && isPortClosedMessage(msg)) {
             if (typeof callback === "function") {
               callback(null, response);
             }
+            return;
+          }
+          if (isRecoverableRuntimeMessage(msg) && attempt < SEND_MESSAGE_MAX_RETRIES) {
+            setTimeout(() => {
+              sendMessageSafe(message, callback, attempt + 1);
+            }, SEND_MESSAGE_RETRY_DELAY_MS);
             return;
           }
           if (typeof callback === "function") {
@@ -204,11 +241,11 @@ function ensureSelectionButton() {
     }, (err) => {
       if (!err || activeSelectionRequestId !== requestId) return;
       clearSelectionStreamState();
-      showGlobalOverlay(`${strings.errorPrefix}: ${err.message || String(err)}`, true);
+      showGlobalOverlay(formatActionableError(strings, err), true);
     });
     if (!sent && activeSelectionRequestId === requestId) {
       clearSelectionStreamState();
-      showGlobalOverlay(`${strings.errorPrefix}: extension context unavailable`, true);
+      showGlobalOverlay(formatActionableError(strings, new Error("Extension context unavailable")), true);
     }
   });
   document.body.appendChild(btn);
@@ -449,7 +486,7 @@ function enhanceInlineText(el) {
       const { result: currentResult, btn: currentBtn, strings: currentStrings } = entry;
       currentBtn.classList.remove(TRANSLATE_LOADING_CLASS);
       currentBtn.textContent = currentStrings.buttonIdle;
-      currentResult.textContent = `${currentStrings.errorPrefix}: ${err.message || String(err)}`;
+      currentResult.textContent = formatActionableError(currentStrings, err);
       currentResult.style.display = "block";
       clearInlineStreamState(requestId);
     });
@@ -458,7 +495,7 @@ function enhanceInlineText(el) {
       if (!entry) return;
       btn.classList.remove(TRANSLATE_LOADING_CLASS);
       btn.textContent = strings.buttonIdle;
-      result.textContent = `${strings.errorPrefix}: extension context unavailable`;
+      result.textContent = formatActionableError(strings, new Error("Extension context unavailable"));
       result.style.display = "block";
       clearInlineStreamState(requestId);
     }
@@ -584,7 +621,13 @@ function showGlobalOverlay(text, finalize) {
 
 if (isExtensionContextValid()) {
   try {
-    chrome.runtime.onMessage.addListener((message) => {
+    chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+      if (message?.action === "aiTranslatePing") {
+        if (typeof sendResponse === "function") {
+          sendResponse({ ok: true });
+        }
+        return;
+      }
       if (message?.action === "showTranslation" && message.text) {
         showGlobalOverlay(message.text, true);
       }
