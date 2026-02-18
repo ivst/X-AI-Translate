@@ -16,10 +16,10 @@
 - תוצאות נשמרות כ-"Last translation / Last error" ב-popup.
 
 ## שימוש
-1. פתחו את ה-popup ולחצו **Open settings** (דף options).
+1. פתחו את ה-popup ולחצו **Settings** (דף options).
 2. הגדירו API base URL, מפתח, מודל, שפות ומצב פלט.
 3. בכל עמוד, סמנו טקסט והשתמשו בתפריט ההקשר או בקיצור.
-4. ב-X או בתגובות YouTube, לחצו על "תרגם טקסט" מתחת לתוכן.
+4. ב-X ובתגובות YouTube, לחצו על "תרגם טקסט" מתחת לתוכן נתמך כדי לראות תרגום inline. ניתן לכבות את הכפתורים האלה ב-Settings.
 
 ## הגדרות (דף Options)
 - Presets של ספקים ו-endpoint מותאם.
@@ -27,8 +27,10 @@
 - מצב פלט + משך overlay.
 - מתג לכפתור תרגום מהיר ליד הסימון.
 - סנכרון אופציונלי של מפתחות API בין מכשירים עם אזהרת אבטחה.
+- מתגים נפרדים להצגה או להסתרה של כפתורי התרגום ב-X וב-YouTube.
 
 ## הרשאות
+- ה-content script רץ על `<all_urls>` כדי לזהות בחירת טקסט ולהציג ממשק תרגום inline היכן שנתמך.
 - `contextMenus`, `storage`, `activeTab`, `scripting`, `notifications`
 - הרשאות host עבור ספקי API מוגדרים ו-APIs של X/Twitter
 

@@ -37,10 +37,10 @@ Chrome extension for translating selected text, X (Twitter) posts, and YouTube c
 - Results saved to “Last translation / Last error” in popup.
 
 ## Usage
-1. Open the popup → click **Open settings** (options page).
+1. Open the popup → click **Settings** (options page).
 2. Configure API base URL, key, model, languages, and output mode.
 3. On any page, select text and use the context menu or hotkey.
-4. On X or YouTube comments, click “Translate text” under the content to see inline translation.
+4. On X and YouTube comments, click "Translate text" under supported content blocks to see inline translation. You can disable these buttons in Settings.
 
 ## Settings (Options page)
 - Provider presets and custom endpoint.
@@ -48,8 +48,10 @@ Chrome extension for translating selected text, X (Twitter) posts, and YouTube c
 - Output mode + overlay duration.
 - Quick selection button toggle.
 - Optional API key sync across devices with security warning.
+- Separate toggles to show or hide translate buttons on X and YouTube.
 
 ## Permissions
+- The content script runs on `<all_urls>` to detect text selections and render inline translation UI where supported.
 - `contextMenus`, `storage`, `activeTab`, `scripting`, `notifications`
 - Host permissions for configured API providers and X/Twitter APIs
 

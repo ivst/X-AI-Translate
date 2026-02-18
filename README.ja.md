@@ -16,10 +16,10 @@
 - 結果を popup に「Last translation / Last error」として保存。
 
 ## 使い方
-1. popup を開き、**Open settings**（options ページ）をクリック。
+1. popup を開き、**Settings**（options ページ）をクリック。
 2. API base URL、キー、モデル、言語、出力モードを設定。
 3. 任意のページでテキストを選択し、コンテキストメニューまたはホットキーを使用。
-4. X または YouTube コメントで、本文下の「テキストを翻訳」をクリックしてインライン翻訳を表示。
+4. X と YouTube コメントでは、対応したコンテンツの下にある「テキストを翻訳」をクリックするとインライン翻訳を表示できます。これらのボタンは Settings で無効化できます。
 
 ## 設定（Options ページ）
 - Provider プリセットとカスタム endpoint。
@@ -27,8 +27,10 @@
 - 出力モード + overlay 表示時間。
 - 選択付近のクイック翻訳ボタン切り替え。
 - セキュリティ警告付きの API キー端末間同期（任意）。
+- X と YouTube の翻訳ボタン表示を個別に切り替えるトグルを用意。
 
 ## 権限
+- content script は `<all_urls>` で動作し、テキスト選択を検出して対応箇所でインライン翻訳 UI を表示します。
 - `contextMenus`, `storage`, `activeTab`, `scripting`, `notifications`
 - 設定済み API プロバイダーおよび X/Twitter API 向け host permissions
 

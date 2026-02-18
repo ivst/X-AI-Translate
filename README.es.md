@@ -20,10 +20,10 @@ Extensión de Chrome para traducir texto seleccionado, publicaciones X (Twitter)
 - Resultados guardados en “Última traducción/Último error” en la ventana emergente.
 
 ## Uso
-1. Abra la ventana emergente → haga clic en **Open settings** (página de opciones).
+1. Abra la ventana emergente → haga clic en **Settings** (página de opciones).
 2. Configure la URL base de la API, la clave, el modelo, los idiomas y el modo de salida.
 3. En cualquier página, seleccione texto y use el menú contextual o la tecla de acceso rápido.
-4. En los comentarios de X o YouTube, haga clic en "Traducir texto" debajo del contenido para ver la traducción en línea.
+4. En X y en los comentarios de YouTube, haz clic en «Traducir texto» bajo contenido compatible para ver la traducción en línea. Puedes desactivar estos botones en Settings.
 
 ## Configuración (página de opciones)
 - Ajustes preestablecidos del proveedor y punto final personalizado.
@@ -31,8 +31,10 @@ Extensión de Chrome para traducir texto seleccionado, publicaciones X (Twitter)
 - Modo de salida + duración de superposición.
 - Alternancia del botón de selección rápida.
 - Sincronización de clave API opcional entre dispositivos con advertencia de seguridad.
+- Interruptores separados para mostrar u ocultar los botones de traducción en X y YouTube.
 
 ## Permisos
+- El content script se ejecuta en `<all_urls>` para detectar selección de texto y mostrar la interfaz de traducción en línea donde sea compatible.
 - `contextMenus`, `storage`, `activeTab`, `scripting`, `notifications`
 - Permisos de host para proveedores de API configurados y API de X/Twitter
 

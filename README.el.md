@@ -16,10 +16,10 @@
 - Τα αποτελέσματα αποθηκεύονται ως «Last translation / Last error» στο popup.
 
 ## Χρήση
-1. Ανοίξτε το popup και πατήστε **Open settings** (options page).
+1. Ανοίξτε το popup και πατήστε **Settings** (options page).
 2. Ρυθμίστε API base URL, key, model, languages και output mode.
 3. Σε οποιαδήποτε σελίδα, επιλέξτε κείμενο και χρησιμοποιήστε context menu ή hotkey.
-4. Σε X ή YouTube comments, πατήστε «Μετάφραση κειμένου» κάτω από το περιεχόμενο.
+4. Σε X και σχόλια YouTube, πατήστε «Μετάφραση κειμένου» κάτω από υποστηριζόμενο περιεχόμενο για να δείτε inline μετάφραση. Μπορείτε να απενεργοποιήσετε αυτά τα κουμπιά από τα Settings.
 
 ## Ρυθμίσεις (Options page)
 - Presets παρόχων και custom endpoint.
@@ -27,8 +27,10 @@
 - Output mode + διάρκεια overlay.
 - Toggle για quick selection button.
 - Προαιρετικός συγχρονισμός API keys μεταξύ συσκευών με προειδοποίηση ασφαλείας.
+- Ξεχωριστά toggles για εμφάνιση ή απόκρυψη κουμπιών μετάφρασης σε X και YouTube.
 
 ## Άδειες
+- Το content script εκτελείται σε `<all_urls>` για εντοπισμό επιλογής κειμένου και εμφάνιση inline διεπαφής μετάφρασης όπου υποστηρίζεται.
 - `contextMenus`, `storage`, `activeTab`, `scripting`, `notifications`
 - Host permissions για ρυθμισμένους API providers και X/Twitter APIs
 
