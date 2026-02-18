@@ -16,19 +16,20 @@ Chrome-Erweiterung zum Übersetzen von markiertem Text, X (Twitter)-Posts und Yo
 - Ergebnisse werden als „Last translation / Last error“ im Popup gespeichert.
 
 ## Verwendung
-1. Popup öffnen und auf **Open settings** klicken (Options-Seite).
+1. Popup öffnen und auf **Settings** klicken (Options-Seite).
 2. API Base URL, Schlüssel, Modell, Sprachen und Ausgabemodus konfigurieren.
 3. Auf beliebiger Seite Text markieren und Kontextmenü oder Hotkey nutzen.
-4. Bei X oder YouTube-Kommentaren auf „Text übersetzen“ unter dem Inhalt klicken.
+4. Bei X und YouTube-Kommentaren klicken Sie unter unterstützten Inhalten auf „Text übersetzen“, um die Inline-Übersetzung zu sehen. Diese Buttons können in Settings deaktiviert werden.
 
 ## Einstellungen (Options-Seite)
 - Provider-Presets und benutzerdefinierter Endpoint.
 - Modellaktualisierung/-laden für OpenAI, Claude, Gemini, OpenRouter (user/public, free-only) und YandexGPT.
 - Ausgabemodus + Overlay-Dauer.
-- Schalter für Schnellübersetzungsbutton neben der Auswahl.
+- Separate Schalter zum Ein- und Ausblenden der Übersetzungsbuttons für X und YouTube.
 - Optionale API-Schlüssel-Synchronisierung zwischen Geräten mit Sicherheitshinweis.
 
 ## Berechtigungen
+- Das Content-Script läuft auf `<all_urls>`, um Textauswahl zu erkennen und die Inline-Übersetzungsoberfläche an unterstützten Stellen anzuzeigen.
 - `contextMenus`, `storage`, `activeTab`, `scripting`, `notifications`
 - Host-Berechtigungen für konfigurierte API-Provider und X/Twitter-APIs
 

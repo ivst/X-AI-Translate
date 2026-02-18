@@ -20,10 +20,10 @@ Estensione di Chrome per tradurre testo selezionato, post X (Twitter) e commenti
 - Risultati salvati in "Ultima traduzione/Ultimo errore" nel popup.
 
 ## Utilizzo
-1. Apri il popup → fai clic su **Open settings** (pagina delle opzioni).
+1. Apri il popup → fai clic su **Settings** (pagina delle opzioni).
 2. Configura l'URL di base dell'API, la chiave, il modello, le lingue e la modalità di output.
 3. In qualsiasi pagina, seleziona il testo e utilizza il menu contestuale o il tasto di scelta rapida.
-4. Nei commenti X o YouTube, fai clic su "Traduci testo" sotto il contenuto per vedere la traduzione in linea.
+4. Su X e nei commenti YouTube, fai clic su «Traduci testo» sotto contenuti supportati per vedere la traduzione inline. Puoi disattivare questi pulsanti in Settings.
 
 ## Impostazioni (pagina Opzioni)
 - Preimpostazioni del provider ed endpoint personalizzato.
@@ -31,8 +31,10 @@ Estensione di Chrome per tradurre testo selezionato, post X (Twitter) e commenti
 - Modalità di output + durata della sovrapposizione.
 - Attivazione/disattivazione del pulsante di selezione rapida.
 - Sincronizzazione opzionale della chiave API tra dispositivi con avviso di sicurezza.
+- Interruttori separati per mostrare o nascondere i pulsanti di traduzione su X e YouTube.
 
 ## Autorizzazioni
+- Il content script viene eseguito su `<all_urls>` per rilevare la selezione del testo e mostrare l’interfaccia di traduzione inline dove supportata.
 - `contextMenus`, `storage`, `activeTab`, `scripting`, `notifications`
 - Autorizzazioni host per provider API configurati e API X/Twitter
 

@@ -4,8 +4,6 @@
   <img src="icon.png" alt="AI Translate Logo" width="128" height="128" />
 </p>
 
-Seçilen metni, X (Twitter) gönderilerini ve YouTube yorumlarını kendi API anahtarınızı (OpenAI uyumlu ve desteklenen yerel sağlayıcılar) kullanarak çevirmek için Chrome uzantısı.
-
 ## Özellikler
 - Seçilen metni içerik menüsü veya `Alt+Shift+T` (akış çıkışı) kısayol tuşu aracılığıyla çevirin.
 - X gönderi/yanıt ve YouTube yorumlarının (akış çıktısı) altındaki satır içi çeviri düğmesi.
@@ -20,19 +18,21 @@ Seçilen metni, X (Twitter) gönderilerini ve YouTube yorumlarını kendi API an
 - Sonuçlar açılır pencerede "Son çeviri / Son hata" bölümüne kaydedildi.
 
 ## Kullanım
-1. Açılır pencereyi açın → **Open settings** (seçenekler sayfası) öğesine tıklayın.
+1. Açılır pencereyi açın → **Settings** (seçenekler sayfası) öğesine tıklayın.
 2. API temel URL'sini, anahtarını, modelini, dillerini ve çıkış modunu yapılandırın.
 3. Herhangi bir sayfada metni seçin ve içerik menüsünü veya kısayol tuşunu kullanın.
-4. X veya YouTube yorumlarında, satır içi çeviriyi görmek için içeriğin altındaki "Metni çevir"i tıklayın.
+4. X ve YouTube yorumlarında, desteklenen içerik altında “Metni çevir” düğmesine tıklayarak satır içi çeviriyi görüntüleyin. Bu düğmeler Settings içinden kapatılabilir.
 
 ## Ayarlar (Seçenekler sayfası)
 - Sağlayıcı ön ayarları ve özel uç nokta.
 - OpenAI, Claude, Gemini, OpenRouter (kullanıcı/genel, yalnızca ücretsiz) ve YandexGPT için model yenileme/yükleme.
 - Çıkış modu + katmanlama süresi.
 - Hızlı seçim düğmesi geçişi.
+- X ve YouTube için çeviri düğmelerini ayrı ayrı gösterme/gizleme anahtarları.
 - Güvenlik uyarısı ile cihazlar arasında isteğe bağlı API anahtarı senkronizasyonu.
 
 ## İzinler
+- content script, metin seçimini algılamak ve desteklenen yerlerde satır içi çeviri arayüzünü göstermek için `<all_urls>` üzerinde çalışır.
 - `contextMenus`, `storage`, `activeTab`, `scripting`, `notifications`
 - Yapılandırılmış API sağlayıcıları ve X/Twitter API'leri için ana bilgisayar izinleri
 

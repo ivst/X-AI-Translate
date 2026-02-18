@@ -16,19 +16,20 @@ Chrome 扩展：使用你自己的 API Key（OpenAI 兼容及受支持的原生�
 - 结果会在 popup 中保存为“Last translation / Last error”。
 
 ## 使用方法
-1. 打开 popup，点击 **Open settings**（options 页面）。
+1. 打开 popup，点击 **Settings**（options 页面）。
 2. 配置 API base URL、密钥、模型、语言和输出模式。
 3. 在任意页面选中文本，使用右键菜单或快捷键。
-4. 在 X 或 YouTube 评论中，点击内容下方“翻译文本”查看内联翻译。
+4. 在 X 和 YouTube 评论中，点击受支持内容下方的“翻译文本”即可查看内联翻译；这些按钮可在 Settings 中关闭。
 
 ## 设置（Options 页面）
 - 提供商预设和自定义 endpoint。
 - OpenAI、Claude、Gemini、OpenRouter（user/public、free-only）和 YandexGPT 的模型刷新/加载。
 - 输出模式 + overlay 持续时间。
-- 选中文本旁快速翻译按钮开关。
+- 提供 X 与 YouTube 翻译按钮的独立显示开关。
 - 可选 API Key 设备间同步（含安全警告）。
 
 ## 权限
+- content script 运行在 `<all_urls>` 上，用于检测文本选择并在受支持位置渲染内联翻译界面。
 - `contextMenus`, `storage`, `activeTab`, `scripting`, `notifications`
 - 面向已配置 API 提供商和 X/Twitter API 的 host permissions
 
