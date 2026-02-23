@@ -2,6 +2,10 @@
 
 Chrome 扩展：使用你自己的 API Key（OpenAI 兼容及受支持的原生提供商）翻译选中文本、X（Twitter）帖子和 YouTube 评论。
 
+[![AI Translate in Chrome Web Store](ai-adv-large.png)](https://chromewebstore.google.com/detail/ai-translate-for-x-and-yo/ccgnhaicdhdhhangmfkddcippajhbbji)
+
+Chrome Web Store: https://chromewebstore.google.com/detail/ai-translate-for-x-and-yo/ccgnhaicdhdhhangmfkddcippajhbbji
+
 ## 功能
 - 通过右键菜单或快捷键 `Alt+Shift+T` 翻译选中文本（流式输出）。
 - 在 X 帖子/回复和 YouTube 评论下方显示内联翻译按钮（流式输出）。

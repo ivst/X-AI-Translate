@@ -2,6 +2,10 @@
 
 הרחבת Chrome לתרגום טקסט מסומן, פוסטים של X (Twitter) ותגובות YouTube באמצעות מפתח API משלך (תואם OpenAI וספקים מקוריים נתמכים).
 
+[![AI Translate in Chrome Web Store](ai-adv-large.png)](https://chromewebstore.google.com/detail/ai-translate-for-x-and-yo/ccgnhaicdhdhhangmfkddcippajhbbji)
+
+Chrome Web Store: https://chromewebstore.google.com/detail/ai-translate-for-x-and-yo/ccgnhaicdhdhhangmfkddcippajhbbji
+
 ## תכונות
 - תרגום טקסט מסומן דרך תפריט ההקשר או קיצור `Alt+Shift+T` (פלט streaming).
 - כפתור תרגום inline מתחת לפוסטים/תגובות ב-X ותגובות YouTube (streaming).

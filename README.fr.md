@@ -2,6 +2,10 @@
 
 Extension Chrome pour traduire le texte sélectionné, les posts X (Twitter) et les commentaires YouTube avec votre propre clé API (compatible OpenAI et fournisseurs natifs pris en charge).
 
+[![AI Translate in Chrome Web Store](ai-adv-large.png)](https://chromewebstore.google.com/detail/ai-translate-for-x-and-yo/ccgnhaicdhdhhangmfkddcippajhbbji)
+
+Chrome Web Store: https://chromewebstore.google.com/detail/ai-translate-for-x-and-yo/ccgnhaicdhdhhangmfkddcippajhbbji
+
 ## Fonctionnalités
 - Traduction du texte sélectionné via le menu contextuel ou le raccourci `Alt+Shift+T` (sortie en streaming).
 - Bouton de traduction inline sous les posts/réponses X et les commentaires YouTube (sortie en streaming).

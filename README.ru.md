@@ -1,8 +1,8 @@
 # AI Translate для X и YouTube
 
-<p align="center">
-  <img src="icon.png" alt="AI Translate Logo" width="128" height="128" />
-</p>
+[![AI Translate in Chrome Web Store](ai-adv-large.png)](https://chromewebstore.google.com/detail/ai-translate-for-x-and-yo/ccgnhaicdhdhhangmfkddcippajhbbji)
+
+Chrome Web Store: https://chromewebstore.google.com/detail/ai-translate-for-x-and-yo/ccgnhaicdhdhhangmfkddcippajhbbji
 
 Расширение Chrome для перевода выделенного текста, сообщений X (Twitter) и комментариев YouTube с использованием вашего собственного ключа API (совместимого с OpenAI и поддерживаемого собственного провайдера).
 
@@ -47,3 +47,5 @@
 
 ## Контакт
 - Электронная почта: `xtran@msk.onl`
+
+

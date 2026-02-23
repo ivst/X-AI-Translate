@@ -1,8 +1,8 @@
 # X ve YouTube için AI Çeviri
 
-<p align="center">
-  <img src="icon.png" alt="AI Translate Logo" width="128" height="128" />
-</p>
+[![AI Translate in Chrome Web Store](ai-adv-large.png)](https://chromewebstore.google.com/detail/ai-translate-for-x-and-yo/ccgnhaicdhdhhangmfkddcippajhbbji)
+
+Chrome Web Store: https://chromewebstore.google.com/detail/ai-translate-for-x-and-yo/ccgnhaicdhdhhangmfkddcippajhbbji
 
 ## Özellikler
 - Seçilen metni içerik menüsü veya `Alt+Shift+T` (akış çıkışı) kısayol tuşu aracılığıyla çevirin.
@@ -46,3 +46,5 @@ Bkz. `PRIVACY_POLICY.md`.
 
 ## Temas etmek
 - E-posta: `xtran@msk.onl`
+
+
