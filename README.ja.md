@@ -2,6 +2,10 @@
 
 選択したテキスト、X（Twitter）の投稿、YouTube コメントを、あなた自身の API キー（OpenAI 互換および対応ネイティブプロバイダー）で翻訳する Chrome 拡張機能です。
 
+[![AI Translate in Chrome Web Store](ai-adv-large.png)](https://chromewebstore.google.com/detail/ai-translate-for-x-and-yo/ccgnhaicdhdhhangmfkddcippajhbbji)
+
+Chrome Web Store: https://chromewebstore.google.com/detail/ai-translate-for-x-and-yo/ccgnhaicdhdhhangmfkddcippajhbbji
+
 ## 機能
 - コンテキストメニューまたはホットキー `Alt+Shift+T` で選択テキストを翻訳（ストリーミング出力）。
 - X の投稿/返信と YouTube コメントの下にインライン翻訳ボタンを表示（ストリーミング出力）。

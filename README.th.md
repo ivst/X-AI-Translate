@@ -1,8 +1,8 @@
 # AI แปลสำหรับ X และ YouTube
 
-<p align="center">
-  <img src="icon.png" alt="AI Translate Logo" width="128" height="128" />
-</p>
+[![AI Translate in Chrome Web Store](ai-adv-large.png)](https://chromewebstore.google.com/detail/ai-translate-for-x-and-yo/ccgnhaicdhdhhangmfkddcippajhbbji)
+
+Chrome Web Store: https://chromewebstore.google.com/detail/ai-translate-for-x-and-yo/ccgnhaicdhdhhangmfkddcippajhbbji
 
 ส่วนขยาย Chrome สำหรับการแปลข้อความที่เลือก โพสต์ X (Twitter) และความคิดเห็นของ YouTube โดยใช้คีย์ API ของคุณเอง (ผู้ให้บริการเนทีฟที่เข้ากันได้กับ OpenAI และรองรับ)
 
@@ -47,3 +47,5 @@
 
 ## ติดต่อ
 - อีเมล์: `xtran@msk.onl`
+
+

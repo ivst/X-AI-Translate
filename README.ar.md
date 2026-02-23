@@ -2,6 +2,10 @@
 
 إضافة Chrome لترجمة النص المحدد ومنشورات X (Twitter) وتعليقات YouTube باستخدام مفتاح API الخاص بك (متوافق مع OpenAI ومزوّدات أصلية مدعومة).
 
+[![AI Translate in Chrome Web Store](ai-adv-large.png)](https://chromewebstore.google.com/detail/ai-translate-for-x-and-yo/ccgnhaicdhdhhangmfkddcippajhbbji)
+
+Chrome Web Store: https://chromewebstore.google.com/detail/ai-translate-for-x-and-yo/ccgnhaicdhdhhangmfkddcippajhbbji
+
 ## الميزات
 - ترجمة النص المحدد عبر قائمة السياق أو اختصار `Alt+Shift+T` (إخراج streaming).
 - زر ترجمة inline أسفل منشورات/ردود X وتعليقات YouTube (streaming).

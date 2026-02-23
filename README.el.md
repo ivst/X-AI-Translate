@@ -2,6 +2,10 @@
 
 Επέκταση Chrome για μετάφραση επιλεγμένου κειμένου, αναρτήσεων X (Twitter) και σχολίων YouTube με το δικό σας API key (OpenAI-compatible και υποστηριζόμενοι native πάροχοι).
 
+[![AI Translate in Chrome Web Store](ai-adv-large.png)](https://chromewebstore.google.com/detail/ai-translate-for-x-and-yo/ccgnhaicdhdhhangmfkddcippajhbbji)
+
+Chrome Web Store: https://chromewebstore.google.com/detail/ai-translate-for-x-and-yo/ccgnhaicdhdhhangmfkddcippajhbbji
+
 ## Δυνατότητες
 - Μετάφραση επιλεγμένου κειμένου μέσω context menu ή hotkey `Alt+Shift+T` (streaming output).
 - Inline κουμπί μετάφρασης κάτω από αναρτήσεις/απαντήσεις X και σχόλια YouTube (streaming output).

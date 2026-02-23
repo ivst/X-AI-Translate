@@ -2,6 +2,10 @@
 
 Chrome-Erweiterung zum Übersetzen von markiertem Text, X (Twitter)-Posts und YouTube-Kommentaren mit Ihrem eigenen API-Schlüssel (OpenAI-kompatibel und unterstützte native Anbieter).
 
+[![AI Translate in Chrome Web Store](ai-adv-large.png)](https://chromewebstore.google.com/detail/ai-translate-for-x-and-yo/ccgnhaicdhdhhangmfkddcippajhbbji)
+
+Chrome Web Store: https://chromewebstore.google.com/detail/ai-translate-for-x-and-yo/ccgnhaicdhdhhangmfkddcippajhbbji
+
 ## Funktionen
 - Übersetzen von markiertem Text über Kontextmenü oder Hotkey `Alt+Shift+T` (Streaming-Ausgabe).
 - Inline-Übersetzungsbutton unter X-Posts/Antworten und YouTube-Kommentaren (Streaming-Ausgabe).

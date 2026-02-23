@@ -1,8 +1,8 @@
 # X 및 YouTube용 AI 번역
 
-<p align="center">
-  <img src="icon.png" alt="AI Translate Logo" width="128" height="128" />
-</p>
+[![AI Translate in Chrome Web Store](ai-adv-large.png)](https://chromewebstore.google.com/detail/ai-translate-for-x-and-yo/ccgnhaicdhdhhangmfkddcippajhbbji)
+
+Chrome Web Store: https://chromewebstore.google.com/detail/ai-translate-for-x-and-yo/ccgnhaicdhdhhangmfkddcippajhbbji
 
 자체 API 키(OpenAI 호환 및 지원되는 기본 공급자)를 사용하여 선택한 텍스트, X(Twitter) 게시물 및 YouTube 댓글을 번역하기 위한 Chrome 확장 프로그램입니다.
 
@@ -47,3 +47,5 @@
 
 ## 연락하다
 - 이메일: `xtran@msk.onl`
+
+
