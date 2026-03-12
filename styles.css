@@ -51,6 +51,7 @@
   transition: opacity 0.2s ease, transform 0.2s ease;
   z-index: 999999;
   white-space: pre-wrap;
+  pointer-events: none;
 }
 
 .ai-translate-overlay-content {
@@ -91,6 +92,7 @@
 .ai-translate-overlay.visible {
   opacity: 0.95;
   transform: translateY(0);
+  pointer-events: auto;
 }
 
 .ai-translate-overlay.centered.visible {
