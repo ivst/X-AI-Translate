@@ -487,6 +487,9 @@ function enhanceInlineText(el) {
   if (el.dataset.aiTranslateProcessed === "1") {
     return;
   }
+  if (existing.length) {
+    existing.forEach((node) => node.remove());
+  }
   el.dataset.aiTranslateProcessed = "1";
 
   const btn = createTranslateButton();
