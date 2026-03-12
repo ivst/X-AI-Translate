@@ -12,6 +12,11 @@ const YOUTUBE_COMMENT_TEXT_SELECTOR = [
   "ytd-comment-renderer #content-text"
 ].join(", ");
 const INLINE_TRANSLATION_TEXT_SELECTOR = `${TWEET_TEXT_SELECTOR}, ${YOUTUBE_COMMENT_TEXT_SELECTOR}`;
+const INLINE_TRANSLATION_HOST_MATCHERS = [
+  /(^|\.)x\.com$/i,
+  /(^|\.)twitter\.com$/i,
+  /(^|\.)youtube\.com$/i
+];
 const TRANSLATE_BTN_CLASS = "ai-translate-btn";
 const TRANSLATE_RESULT_CLASS = "ai-translate-result";
 const TRANSLATE_LOADING_CLASS = "ai-translate-loading";
@@ -55,6 +60,13 @@ let overlayLoadingTimer = null;
 let overlayLoadingRequestId = null;
 let overlayLoadingFrame = 0;
 let extensionContextLost = false;
+
+function isInlineTranslationHost(hostname) {
+  const host = String(hostname || "").toLowerCase();
+  return INLINE_TRANSLATION_HOST_MATCHERS.some((matcher) => matcher.test(host));
+}
+
+const shouldRunInlineTranslation = isInlineTranslationHost(window.location.hostname);
 
 function isContextInvalidationError(err) {
   const message = String(err?.message || err || "");
@@ -475,6 +487,9 @@ function enhanceInlineText(el) {
   if (el.dataset.aiTranslateProcessed === "1") {
     return;
   }
+  if (existing.length) {
+    existing.forEach((node) => node.remove());
+  }
   el.dataset.aiTranslateProcessed = "1";
 
   const btn = createTranslateButton();
@@ -531,9 +546,11 @@ function scanForInlineTexts() {
   document.querySelectorAll(INLINE_TRANSLATION_TEXT_SELECTOR).forEach(enhanceInlineText);
 }
 
-const observer = new MutationObserver(() => scanForInlineTexts());
-observer.observe(document.documentElement, { childList: true, subtree: true });
-scanForInlineTexts();
+if (shouldRunInlineTranslation) {
+  const observer = new MutationObserver(() => scanForInlineTexts());
+  observer.observe(document.documentElement, { childList: true, subtree: true });
+  scanForInlineTexts();
+}
 
 function ensureOverlay() {
   if (overlayEl && overlayContentEl) return;
@@ -695,7 +712,9 @@ if (isExtensionContextValid()) {
 
     chrome.storage.sync.get(DEFAULT_CONFIG, (data) => {
       currentConfig = { ...DEFAULT_CONFIG, ...data };
-      scanForInlineTexts();
+      if (shouldRunInlineTranslation) {
+        scanForInlineTexts();
+      }
     });
 
     chrome.storage.onChanged.addListener((changes, areaName) => {
@@ -711,16 +730,20 @@ if (isExtensionContextValid()) {
         const strings = getLocaleStrings(currentConfig.uiLang || currentConfig.targetLang);
         selectionButton.title = strings.selectionTitle;
       }
-      document.querySelectorAll(INLINE_TRANSLATION_TEXT_SELECTOR).forEach((el) => {
-        el.dataset.aiTranslateProcessed = "0";
-      });
-      scanForInlineTexts();
+      if (shouldRunInlineTranslation) {
+        document.querySelectorAll(INLINE_TRANSLATION_TEXT_SELECTOR).forEach((el) => {
+          el.dataset.aiTranslateProcessed = "0";
+        });
+        scanForInlineTexts();
+      }
     });
   } catch (err) {
     // Ignore when extension context is invalidated.
   }
 } else {
-  scanForInlineTexts();
+  if (shouldRunInlineTranslation) {
+    scanForInlineTexts();
+  }
 }
 
 function handleSelectionUpdate() {
