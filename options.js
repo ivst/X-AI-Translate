@@ -38,8 +38,13 @@ const PROVIDERS = {
   },
   deepseek: {
     label: "DeepSeek",
-    apiUrl: "https://api.deepseek.com/v1",
-    models: ["deepseek-chat", "deepseek-reasoner"]
+    apiUrl: "https://api.deepseek.com",
+    models: [
+      "deepseek-v4-flash",
+      "deepseek-v4-pro",
+      "deepseek-chat",
+      "deepseek-reasoner"
+    ]
   },
   yandexgpt: {
     label: "YandexGPT",
@@ -105,6 +110,8 @@ const OPENROUTER_CACHE_KEY = "openrouter_models_cache";
 const OPENROUTER_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const OPENAI_CACHE_KEY = "openai_models_cache";
 const OPENAI_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const DEEPSEEK_CACHE_KEY = "deepseek_models_cache";
+const DEEPSEEK_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const CLAUDE_CACHE_KEY = "claude_models_cache";
 const CLAUDE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const GEMINI_CACHE_KEY = "gemini_models_cache";
@@ -581,6 +588,69 @@ async function getOpenAIModels(apiUrl, apiKey, forceRefresh = false) {
   return ids;
 }
 
+async function fetchDeepSeekModels(apiUrl, apiKey) {
+  const endpoint = `${normalizeApiBaseUrl(apiUrl)}/models`;
+  const response = await fetch(endpoint, {
+    headers: {
+      Authorization: `Bearer ${apiKey}`
+    }
+  });
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`DeepSeek API error ${response.status}: ${errorText}`);
+  }
+  const json = await response.json();
+  return Array.isArray(json?.data) ? json.data : [];
+}
+
+function filterDeepSeekModels(models) {
+  const ids = models
+    .map((m) => m.id)
+    .filter((id) => /^deepseek-/i.test(String(id)))
+    .sort();
+  for (const legacyModel of ["deepseek-chat", "deepseek-reasoner"]) {
+    if (!ids.includes(legacyModel)) {
+      ids.push(legacyModel);
+    }
+  }
+  return ids;
+}
+
+function loadDeepSeekCache() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get({ [DEEPSEEK_CACHE_KEY]: null }, (data) => {
+      resolve(data[DEEPSEEK_CACHE_KEY]);
+    });
+  });
+}
+
+async function getDeepSeekModels(apiUrl, apiKey, forceRefresh = false) {
+  const normalizedUrl = normalizeApiBaseUrl(apiUrl);
+  if (!normalizedUrl) {
+    throw new Error("API URL is required.");
+  }
+  const cache = await loadDeepSeekCache();
+  if (
+    !forceRefresh &&
+    cache &&
+    cache.apiUrl === normalizedUrl &&
+    Array.isArray(cache.models) &&
+    Date.now() - cache.ts < DEEPSEEK_CACHE_TTL_MS
+  ) {
+    return filterDeepSeekModels(cache.models.map((id) => ({ id })));
+  }
+  const models = await fetchDeepSeekModels(normalizedUrl, apiKey);
+  const ids = filterDeepSeekModels(models);
+  chrome.storage.local.set({
+    [DEEPSEEK_CACHE_KEY]: {
+      ts: Date.now(),
+      apiUrl: normalizedUrl,
+      models: ids
+    }
+  });
+  return ids;
+}
+
 async function fetchClaudeModels(apiUrl, apiKey) {
   const endpoint = `${normalizeApiBaseUrl(apiUrl)}/v1/models`;
   const response = await fetch(endpoint, {
@@ -933,6 +1003,8 @@ chrome.storage.sync.get(defaultConfig, (data) => {
   setYandexControlsVisible(provider === "yandexgpt");
   applyTranslations(uiLang);
   applySetupNoteTranslations(uiLang);
+  document.getElementById("extVersion").textContent =
+    "v" + chrome.runtime.getManifest().version;
   chrome.storage.local.get({ apiKeyByProvider: {}, apiKey: "" }, (localData) => {
     migrateLegacySyncedKeysToLocalIfNeeded(data, localData);
     const key = getKeyByProviderFromStore(provider, data, localData, Boolean(data.syncApiKeys));
@@ -957,6 +1029,18 @@ chrome.storage.sync.get(defaultConfig, (data) => {
         })
         .catch(() => {
           populateModels(PROVIDERS.openai.models, data.model || defaultConfig.model);
+        });
+    } else if (provider === "deepseek") {
+      getDeepSeekModels(apiUrlInput.value, key)
+        .then((models) => {
+          if (models.length) {
+            populateModels(models, data.model || PROVIDERS.deepseek.models[0]);
+          } else {
+            populateModels(PROVIDERS.deepseek.models, data.model || PROVIDERS.deepseek.models[0]);
+          }
+        })
+        .catch(() => {
+          populateModels(PROVIDERS.deepseek.models, data.model || PROVIDERS.deepseek.models[0]);
         });
     } else if (provider === "claude") {
       getClaudeModels(apiUrlInput.value, key)
@@ -1022,6 +1106,18 @@ providerSelect.addEventListener("change", () => {
           })
           .catch(() => {
             populateModels(PROVIDERS.openai.models, modelSelect.value || modelCustomInput.value);
+          });
+      } else if (provider === "deepseek" && apiKeyInput.value.trim()) {
+        getDeepSeekModels(apiUrlInput.value, apiKeyInput.value.trim())
+          .then((models) => {
+            if (models.length) {
+              populateModels(models, modelSelect.value || modelCustomInput.value);
+            } else {
+              populateModels(PROVIDERS.deepseek.models, modelSelect.value || modelCustomInput.value);
+            }
+          })
+          .catch(() => {
+            populateModels(PROVIDERS.deepseek.models, modelSelect.value || modelCustomInput.value);
           });
       } else if (provider === "claude" && apiKeyInput.value.trim()) {
         getClaudeModels(apiUrlInput.value, apiKeyInput.value.trim())
@@ -1100,6 +1196,22 @@ function refreshProviderModelsAfterSave(provider, apiUrl, apiKey, model, yandexF
       })
       .catch((err) => {
         populateModels(PROVIDERS.openai.models, model);
+        setStatus(err.message || String(err), true);
+      });
+    return;
+  }
+  if (provider === "deepseek") {
+    getDeepSeekModels(apiUrl, apiKey, true)
+      .then((models) => {
+        if (models.length) {
+          populateModels(models, model);
+          setStatus(getLocaleStrings(uiLang).status_models_updated, false);
+        } else {
+          populateModels(PROVIDERS.deepseek.models, model);
+        }
+      })
+      .catch((err) => {
+        populateModels(PROVIDERS.deepseek.models, model);
         setStatus(err.message || String(err), true);
       });
     return;

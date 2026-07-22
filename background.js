@@ -284,6 +284,13 @@ function buildProviderHeaders(config, authToken) {
 function resolveModelForProvider(config) {
   const model = (config.model || "").trim();
   if (!model) return model;
+  if (config.provider === "deepseek") {
+    // Keep existing installations working after DeepSeek retires these aliases.
+    if (model === "deepseek-chat" || model === "deepseek-reasoner") {
+      return "deepseek-v4-flash";
+    }
+    return model;
+  }
   if (config.provider !== "yandexgpt") {
     return model;
   }
@@ -321,6 +328,7 @@ async function getAuthorizationToken(config) {
 
 function buildTranslateRequestBody(config, text, targetLang, sourceLang, stream) {
   const prompt = buildPrompt(text, targetLang, sourceLang);
+  const configuredModel = (config.model || "").trim();
   if (config.provider === "claude") {
     return {
       model: resolveModelForProvider(config),
@@ -331,7 +339,7 @@ function buildTranslateRequestBody(config, text, targetLang, sourceLang, stream)
       stream: Boolean(stream)
     };
   }
-  return {
+  const body = {
     model: resolveModelForProvider(config),
     messages: [
       {
@@ -346,6 +354,14 @@ function buildTranslateRequestBody(config, text, targetLang, sourceLang, stream)
     temperature: 0.2,
     stream: Boolean(stream)
   };
+  if (config.provider === "deepseek") {
+    if (configuredModel === "deepseek-chat") {
+      body.thinking = { type: "disabled" };
+    } else if (configuredModel === "deepseek-reasoner") {
+      body.thinking = { type: "enabled" };
+    }
+  }
+  return body;
 }
 
 function extractClaudeText(data) {

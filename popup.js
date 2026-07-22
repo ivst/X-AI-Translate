@@ -252,6 +252,7 @@ function applyTranslations(lang) {
   quickToSelect.title = strings.quick_to || "To";
   quickToSelect.setAttribute("aria-label", strings.quick_to || "To");
   quickSwapBtn.title = strings.quick_swap_title || "Swap languages";
+  quickSwapBtn.setAttribute("aria-label", strings.quick_swap_title || "Swap languages");
 }
 
 function buildQuickLanguageOptions(lang, sourceValue, targetValue) {
@@ -288,7 +289,13 @@ function buildQuickLanguageOptions(lang, sourceValue, targetValue) {
     : "en";
 }
 
+let quickStateSaveTimer = null;
+
 function saveQuickState() {
+  if (quickStateSaveTimer !== null) {
+    clearTimeout(quickStateSaveTimer);
+    quickStateSaveTimer = null;
+  }
   const storageLocal = getStorageAreaSafe("local");
   if (!storageLocal) return;
   storageLocal.set({
@@ -301,14 +308,24 @@ function saveQuickState() {
   });
 }
 
+function scheduleQuickStateSave() {
+  if (quickStateSaveTimer !== null) {
+    clearTimeout(quickStateSaveTimer);
+  }
+  quickStateSaveTimer = setTimeout(() => {
+    quickStateSaveTimer = null;
+    saveQuickState();
+  }, 250);
+}
+
 function restoreQuickState(defaultSource, defaultTarget) {
   const storageLocal = getStorageAreaSafe("local");
   if (!storageLocal) {
     buildQuickLanguageOptions(currentUiLang, defaultSource || "auto", defaultTarget || "en");
     return;
   }
-  storageLocal.get({ [QUICK_STATE_KEY]: QUICK_STATE_DEFAULT }, (data) => {
-    const state = data[QUICK_STATE_KEY] || QUICK_STATE_DEFAULT;
+  storageLocal.get({ [QUICK_STATE_KEY]: null }, (data) => {
+    const state = data[QUICK_STATE_KEY] || {};
     const sourceLang = state.sourceLang || defaultSource || QUICK_STATE_DEFAULT.sourceLang;
     const targetLang = state.targetLang || defaultTarget || QUICK_STATE_DEFAULT.targetLang;
     buildQuickLanguageOptions(currentUiLang, sourceLang, targetLang);
@@ -453,7 +470,8 @@ quickTranslateBtn.addEventListener("click", () => {
 
 quickFromSelect.addEventListener("change", saveQuickState);
 quickToSelect.addEventListener("change", saveQuickState);
-quickInput.addEventListener("input", saveQuickState);
+quickInput.addEventListener("input", scheduleQuickStateSave);
+window.addEventListener("pagehide", saveQuickState);
 
 quickSwapBtn.addEventListener("click", () => {
   const prevFrom = quickFromSelect.value || "auto";
