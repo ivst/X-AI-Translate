@@ -1,4 +1,4 @@
-# AI Translate עבור X ו-YouTube
+# AI Translate עבור X ו-YouTube (BYOK)
 
 הרחבת Chrome לתרגום טקסט מסומן, פוסטים של X (Twitter) ותגובות YouTube באמצעות מפתח API משלך (תואם OpenAI וספקים מקוריים נתמכים).
 

@@ -1,4 +1,4 @@
-# AI Translate لـ X وYouTube
+# AI Translate لـ X وYouTube (BYOK)
 
 إضافة Chrome لترجمة النص المحدد ومنشورات X (Twitter) وتعليقات YouTube باستخدام مفتاح API الخاص بك (متوافق مع OpenAI ومزوّدات أصلية مدعومة).
 

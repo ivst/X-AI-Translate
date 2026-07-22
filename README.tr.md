@@ -1,4 +1,4 @@
-# X ve YouTube için AI Çeviri
+# X ve YouTube için AI Çeviri (BYOK)
 
 [![AI Translate in Chrome Web Store](ai-adv-large.png)](https://chromewebstore.google.com/detail/ai-translate-for-x-and-yo/ccgnhaicdhdhhangmfkddcippajhbbji)
 

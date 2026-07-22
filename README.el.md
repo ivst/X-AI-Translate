@@ -1,4 +1,4 @@
-# AI Translate για X και YouTube
+# AI Translate για X και YouTube (BYOK)
 
 Επέκταση Chrome για μετάφραση επιλεγμένου κειμένου, αναρτήσεων X (Twitter) και σχολίων YouTube με το δικό σας API key (OpenAI-compatible και υποστηριζόμενοι native πάροχοι).
 

@@ -1,4 +1,4 @@
-# AI Translate pour X et YouTube
+# AI Translate pour X et YouTube (BYOK)
 
 Extension Chrome pour traduire le texte sélectionné, les posts X (Twitter) et les commentaires YouTube avec votre propre clé API (compatible OpenAI et fournisseurs natifs pris en charge).
 
