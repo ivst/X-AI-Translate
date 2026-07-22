@@ -30,7 +30,7 @@ Chrome extension for translating selected text, X (Twitter) posts, and YouTube c
 - Popup quick translation block with language pair switch, saved last input/output, and saved language pair.
 - Supports OpenAI, Claude, Gemini, DeepSeek, YandexGPT, OpenRouter, and custom OpenAI-compatible endpoints.
 - OpenRouter model list with Free-only filter and cache.
-- Auto-loading model lists for OpenAI, Claude, Gemini, OpenRouter, and YandexGPT.
+- Auto-loading model lists for OpenAI, Claude, Gemini, DeepSeek, OpenRouter, and YandexGPT.
 - Output modes: bottom-right toast or centered modal (no extension-popup output).
 - Target + source language selection (autodetect available).
 - API keys can be stored locally (default) or synchronized across devices (optional, less secure).
@@ -44,7 +44,7 @@ Chrome extension for translating selected text, X (Twitter) posts, and YouTube c
 
 ## Settings (Options page)
 - Provider presets and custom endpoint.
-- Model refresh/loading for OpenAI, Claude, Gemini, OpenRouter (user/public, free-only), and YandexGPT.
+- Model refresh/loading for OpenAI, Claude, Gemini, DeepSeek, OpenRouter (user/public, free-only), and YandexGPT.
 - Output mode + overlay duration.
 - Quick selection button toggle.
 - Optional API key sync across devices with security warning.
