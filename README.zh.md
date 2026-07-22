@@ -1,4 +1,4 @@
-# 适用于 X 和 YouTube 的 AI Translate
+# 适用于 X 和 YouTube 的 AI Translate (BYOK)
 
 Chrome 扩展：使用你自己的 API Key（OpenAI 兼容及受支持的原生提供商）翻译选中文本、X（Twitter）帖子和 YouTube 评论。
 

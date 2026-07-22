@@ -1,4 +1,4 @@
-# X と YouTube 向け AI Translate
+# X と YouTube 向け AI Translate (BYOK)
 
 選択したテキスト、X（Twitter）の投稿、YouTube コメントを、あなた自身の API キー（OpenAI 互換および対応ネイティブプロバイダー）で翻訳する Chrome 拡張機能です。
 
