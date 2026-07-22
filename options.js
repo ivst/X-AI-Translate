@@ -39,7 +39,12 @@ const PROVIDERS = {
   deepseek: {
     label: "DeepSeek",
     apiUrl: "https://api.deepseek.com/v1",
-    models: ["deepseek-chat", "deepseek-reasoner"]
+    models: [
+      "deepseek-v4-flash",
+      "deepseek-v4-pro",
+      "deepseek-chat",
+      "deepseek-reasoner"
+    ]
   },
   yandexgpt: {
     label: "YandexGPT",
