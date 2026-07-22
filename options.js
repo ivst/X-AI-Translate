@@ -38,7 +38,7 @@ const PROVIDERS = {
   },
   deepseek: {
     label: "DeepSeek",
-    apiUrl: "https://api.deepseek.com/v1",
+    apiUrl: "https://api.deepseek.com",
     models: [
       "deepseek-v4-flash",
       "deepseek-v4-pro",
