@@ -1003,6 +1003,8 @@ chrome.storage.sync.get(defaultConfig, (data) => {
   setYandexControlsVisible(provider === "yandexgpt");
   applyTranslations(uiLang);
   applySetupNoteTranslations(uiLang);
+  document.getElementById("extVersion").textContent =
+    "v" + chrome.runtime.getManifest().version;
   chrome.storage.local.get({ apiKeyByProvider: {}, apiKey: "" }, (localData) => {
     migrateLegacySyncedKeysToLocalIfNeeded(data, localData);
     const key = getKeyByProviderFromStore(provider, data, localData, Boolean(data.syncApiKeys));
