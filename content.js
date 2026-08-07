@@ -30,7 +30,9 @@ const DEFAULT_CONFIG = {
   overlayDuration: 6,
   selectionShortcut: false,
   enableXInlineTranslation: true,
-  enableYoutubeInlineTranslation: true
+  enableYoutubeInlineTranslation: true,
+  enableXAutoTranslation: false,
+  enableYoutubeAutoTranslation: false
 };
 const SCRIPT_DOMINANCE_THRESHOLD = 0.7;
 const CONTENT_STRINGS_FALLBACK = {
@@ -51,6 +53,14 @@ let streamSeq = 0;
 const inlineStreams = new Map();
 const inlineProcessedTexts = new WeakMap();
 const INLINE_STREAM_TIMEOUT_MS = 45000;
+const AUTO_TRANSLATION_MAX_CONCURRENT = 2;
+const autoTranslationQueue = [];
+let autoTranslationVisibleTargets = new WeakSet();
+const autoTranslationPending = new WeakMap();
+const autoTranslationCompleted = new WeakMap();
+let autoTranslationObserver = null;
+let autoTranslationActive = 0;
+let autoTranslationGeneration = 0;
 let inlineObserver = null;
 let inlineScanScheduled = false;
 let pendingInlineTargets = new Set();
@@ -200,13 +210,16 @@ function sendMessageSafe(message, callback, attempt = 0) {
   }
 }
 
-function clearInlineStreamState(requestId) {
+function clearInlineStreamState(requestId, success = false) {
   const entry = inlineStreams.get(requestId);
   if (!entry) return;
   if (entry.timeoutId) {
     clearTimeout(entry.timeoutId);
   }
   inlineStreams.delete(requestId);
+  const onComplete = entry.onComplete;
+  entry.onComplete = null;
+  onComplete?.(success);
 }
 
 function armInlineStreamTimeout(requestId) {
@@ -219,11 +232,13 @@ function armInlineStreamTimeout(requestId) {
     const current = inlineStreams.get(requestId);
     if (!current) return;
     const { result, btn, strings } = current;
-    btn.classList.remove(TRANSLATE_LOADING_CLASS);
-    btn.textContent = strings.buttonIdle;
+    if (btn) {
+      btn.classList.remove(TRANSLATE_LOADING_CLASS);
+      btn.textContent = strings.buttonIdle;
+    }
     result.textContent = `${strings.errorPrefix}: timeout`;
     result.style.display = "block";
-    inlineStreams.delete(requestId);
+    clearInlineStreamState(requestId);
   }, INLINE_STREAM_TIMEOUT_MS);
 }
 
@@ -476,12 +491,227 @@ function isInlineTranslationEnabledForElement(el) {
 
 function isInlineTranslationEnabledForHost() {
   if (isXInlinePage) {
-    return currentConfig.enableXInlineTranslation !== false;
+    return currentConfig.enableXInlineTranslation !== false
+      || currentConfig.enableXAutoTranslation === true;
   }
   if (isYoutubeInlinePage) {
-    return currentConfig.enableYoutubeInlineTranslation !== false;
+    return currentConfig.enableYoutubeInlineTranslation !== false
+      || currentConfig.enableYoutubeAutoTranslation === true;
   }
   return false;
+}
+
+function isAutoTranslationEnabledForElement(el) {
+  if (isXInlineTarget(el)) {
+    return currentConfig.enableXAutoTranslation === true;
+  }
+  if (isYoutubeInlineTarget(el)) {
+    return currentConfig.enableYoutubeAutoTranslation === true;
+  }
+  return false;
+}
+
+function isAutoTranslationEnabledForHost() {
+  if (isXInlinePage) {
+    return currentConfig.enableXAutoTranslation === true;
+  }
+  if (isYoutubeInlinePage) {
+    return currentConfig.enableYoutubeAutoTranslation === true;
+  }
+  return false;
+}
+
+function getAutoTranslationSignature(el, text) {
+  const normalizedText = String(text || "").trim();
+  if (!normalizedText || !shouldShowButton(normalizedText, currentConfig.targetLang)) {
+    return "";
+  }
+  return JSON.stringify([
+    normalizedText,
+    currentConfig.sourceLang || "auto",
+    currentConfig.targetLang || "en",
+    currentConfig.provider || "",
+    currentConfig.apiUrl || "",
+    currentConfig.model || ""
+  ]);
+}
+
+function ensureAutoTranslationObserver() {
+  if (autoTranslationObserver || typeof window.IntersectionObserver !== "function") {
+    return;
+  }
+  autoTranslationObserver = new window.IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      const el = entry.target;
+      if (!entry.isIntersecting) {
+        autoTranslationVisibleTargets.delete(el);
+        return;
+      }
+      if (!isAutoTranslationEnabledForElement(el) || !el.isConnected) {
+        return;
+      }
+      autoTranslationVisibleTargets.add(el);
+      enqueueAutoTranslation(el);
+    });
+  }, { threshold: 0.1 });
+}
+
+function observeAutoTranslationTarget(el, shouldObserve) {
+  if (!shouldObserve) {
+    autoTranslationObserver?.unobserve(el);
+    autoTranslationVisibleTargets.delete(el);
+    return;
+  }
+  ensureAutoTranslationObserver();
+  autoTranslationObserver?.observe(el);
+}
+
+function stopAutoTranslationObserver() {
+  autoTranslationGeneration += 1;
+  autoTranslationQueue.length = 0;
+  autoTranslationVisibleTargets = new WeakSet();
+  if (autoTranslationObserver) {
+    autoTranslationObserver.disconnect();
+    autoTranslationObserver = null;
+  }
+}
+
+function finalizeAutoTranslation(el, signature, generation, success) {
+  const pending = autoTranslationPending.get(el);
+  if (pending?.signature === signature && pending.generation === generation) {
+    autoTranslationPending.delete(el);
+  }
+  if (success && generation === autoTranslationGeneration) {
+    autoTranslationCompleted.set(el, signature);
+  }
+  autoTranslationActive = Math.max(0, autoTranslationActive - 1);
+  pumpAutoTranslationQueue();
+}
+
+function enqueueAutoTranslation(el) {
+  if (!isAutoTranslationEnabledForElement(el) || !el.isConnected) return;
+  const signature = getAutoTranslationSignature(el, el.textContent);
+  if (!signature || autoTranslationCompleted.get(el) === signature) return;
+  const generation = autoTranslationGeneration;
+  const pending = autoTranslationPending.get(el);
+  if (pending?.signature === signature && pending.generation === generation) return;
+  autoTranslationPending.set(el, { signature, generation });
+  autoTranslationQueue.push({ el, signature, generation });
+  pumpAutoTranslationQueue();
+}
+
+function pumpAutoTranslationQueue() {
+  while (autoTranslationActive < AUTO_TRANSLATION_MAX_CONCURRENT && autoTranslationQueue.length) {
+    const task = autoTranslationQueue.shift();
+    const pending = autoTranslationPending.get(task.el);
+    if (!pending || pending.signature !== task.signature || pending.generation !== task.generation) {
+      continue;
+    }
+    if (
+      task.generation !== autoTranslationGeneration
+      || !autoTranslationVisibleTargets.has(task.el)
+      || !isAutoTranslationEnabledForElement(task.el)
+      || !task.el.isConnected
+    ) {
+      autoTranslationPending.delete(task.el);
+      continue;
+    }
+
+    const signature = getAutoTranslationSignature(task.el, task.el.textContent);
+    if (signature !== task.signature) {
+      autoTranslationPending.delete(task.el);
+      continue;
+    }
+
+    const result = ensureInlineResult(task.el);
+    if (!result) {
+      autoTranslationPending.delete(task.el);
+      continue;
+    }
+    const container = getInlineContainer(task.el);
+    const btn = container?.querySelector(`.${TRANSLATE_BTN_CLASS}`) || null;
+    const strings = getLocaleStrings(currentConfig.uiLang || currentConfig.targetLang);
+    autoTranslationActive += 1;
+    const started = startInlineTranslation(task.el, btn, result, strings, {
+      auto: true,
+      signature: task.signature,
+      generation: task.generation,
+      onComplete: (success) => finalizeAutoTranslation(
+        task.el,
+        task.signature,
+        task.generation,
+        success
+      )
+    });
+    if (!started) {
+      autoTranslationActive = Math.max(0, autoTranslationActive - 1);
+      autoTranslationPending.delete(task.el);
+    }
+  }
+}
+
+function ensureInlineResult(el) {
+  const container = getInlineContainer(el);
+  if (!container) return null;
+  const existing = container.querySelector(`.${TRANSLATE_RESULT_CLASS}`);
+  if (existing) return existing;
+  const result = createResultContainer();
+  container.appendChild(result);
+  return result;
+}
+
+function startInlineTranslation(el, btn, result, strings, options = {}) {
+  const textToTranslate = el.textContent?.trim() || "";
+  if (!textToTranslate || btn?.classList.contains(TRANSLATE_LOADING_CLASS)) {
+    return false;
+  }
+
+  if (btn) {
+    btn.classList.add(TRANSLATE_LOADING_CLASS);
+    btn.textContent = strings.buttonLoading;
+  }
+  result.style.display = "none";
+  result.textContent = "";
+
+  const requestId = `inline-${Date.now()}-${streamSeq++}`;
+  inlineStreams.set(requestId, {
+    result,
+    btn,
+    strings,
+    timeoutId: null,
+    onComplete: options.onComplete || null
+  });
+  armInlineStreamTimeout(requestId);
+  const sent = sendMessageSafe({
+    action: "translateStream",
+    requestId,
+    target: "inline",
+    text: textToTranslate
+  }, (err) => {
+    if (!err) return;
+    const entry = inlineStreams.get(requestId);
+    if (!entry) return;
+    const { result: currentResult, btn: currentBtn, strings: currentStrings } = entry;
+    if (currentBtn) {
+      currentBtn.classList.remove(TRANSLATE_LOADING_CLASS);
+      currentBtn.textContent = currentStrings.buttonIdle;
+    }
+    currentResult.textContent = formatActionableError(currentStrings, err);
+    currentResult.style.display = "block";
+    clearInlineStreamState(requestId);
+  });
+  if (!sent) {
+    const entry = inlineStreams.get(requestId);
+    if (!entry) return true;
+    if (btn) {
+      btn.classList.remove(TRANSLATE_LOADING_CLASS);
+      btn.textContent = strings.buttonIdle;
+    }
+    result.textContent = formatActionableError(strings, new Error("Extension context unavailable"));
+    result.style.display = "block";
+    clearInlineStreamState(requestId);
+  }
+  return true;
 }
 
 function enhanceInlineText(el) {
@@ -498,8 +728,11 @@ function enhanceInlineText(el) {
       .querySelectorAll("[data-ai-translate]")
       .forEach((node) => node.remove());
   };
-  if (!isInlineTranslationEnabledForElement(el)) {
+  const buttonEnabled = isInlineTranslationEnabledForElement(el);
+  const autoEnabled = isAutoTranslationEnabledForElement(el);
+  if (!buttonEnabled && !autoEnabled) {
     removeExisting();
+    observeAutoTranslationTarget(el, false);
     inlineProcessedTexts.delete(el);
     return;
   }
@@ -510,10 +743,12 @@ function enhanceInlineText(el) {
     return;
   }
 
-  const showButton =
-    shouldShowButton(text, currentConfig.targetLang);
+  const shouldTranslate = shouldShowButton(text, currentConfig.targetLang);
+  const showButton = buttonEnabled && shouldTranslate;
+  const shouldAutoTranslate = autoEnabled && shouldTranslate;
+  observeAutoTranslationTarget(el, shouldAutoTranslate);
 
-  if (!showButton) {
+  if (!showButton && !shouldAutoTranslate) {
     removeExisting();
     inlineProcessedTexts.delete(el);
     return;
@@ -524,54 +759,22 @@ function enhanceInlineText(el) {
   }
   inlineProcessedTexts.set(el, text);
 
-  const btn = createTranslateButton();
-  const result = createResultContainer();
+  const btn = showButton ? createTranslateButton() : null;
+  const result = showButton || shouldAutoTranslate ? createResultContainer() : null;
   const strings = getLocaleStrings(currentConfig.uiLang || currentConfig.targetLang);
-  btn.textContent = strings.buttonIdle;
-
-  btn.addEventListener("click", () => {
-    const textToTranslate = el.textContent?.trim();
-    if (!textToTranslate) {
-      return;
-    }
-
-    btn.classList.add(TRANSLATE_LOADING_CLASS);
-    btn.textContent = strings.buttonLoading;
-    result.style.display = "none";
-    result.textContent = "";
-
-    const requestId = `inline-${Date.now()}-${streamSeq++}`;
-    inlineStreams.set(requestId, { result, btn, strings, timeoutId: null });
-    armInlineStreamTimeout(requestId);
-    const sent = sendMessageSafe({
-      action: "translateStream",
-      requestId,
-      target: "inline",
-      text: textToTranslate
-    }, (err) => {
-      if (!err) return;
-      const entry = inlineStreams.get(requestId);
-      if (!entry) return;
-      const { result: currentResult, btn: currentBtn, strings: currentStrings } = entry;
-      currentBtn.classList.remove(TRANSLATE_LOADING_CLASS);
-      currentBtn.textContent = currentStrings.buttonIdle;
-      currentResult.textContent = formatActionableError(currentStrings, err);
-      currentResult.style.display = "block";
-      clearInlineStreamState(requestId);
+  if (btn) {
+    btn.textContent = strings.buttonIdle;
+    btn.addEventListener("click", () => {
+      startInlineTranslation(el, btn, result, strings);
     });
-    if (!sent) {
-      const entry = inlineStreams.get(requestId);
-      if (!entry) return;
-      btn.classList.remove(TRANSLATE_LOADING_CLASS);
-      btn.textContent = strings.buttonIdle;
-      result.textContent = formatActionableError(strings, new Error("Extension context unavailable"));
-      result.style.display = "block";
-      clearInlineStreamState(requestId);
-    }
-  });
-
-  container.appendChild(btn);
-  container.appendChild(result);
+    container.appendChild(btn);
+  }
+  if (result) {
+    container.appendChild(result);
+  }
+  if (shouldAutoTranslate && autoTranslationVisibleTargets.has(el)) {
+    enqueueAutoTranslation(el);
+  }
 }
 
 function scanForInlineTexts() {
@@ -648,6 +851,7 @@ function stopInlineObserver() {
   }
   pendingInlineTargets.clear();
   inlineScanScheduled = false;
+  stopAutoTranslationObserver();
 }
 
 function updateInlineObserver(forceFullScan = false) {
@@ -667,6 +871,10 @@ function updateInlineObserver(forceFullScan = false) {
       subtree: true
     });
     forceFullScan = true;
+  }
+
+  if (forceFullScan || !isAutoTranslationEnabledForHost()) {
+    stopAutoTranslationObserver();
   }
 
   if (forceFullScan) {
@@ -822,12 +1030,14 @@ if (isExtensionContextValid()) {
           result.textContent = text || "";
           result.style.display = "block";
           if (done) {
-            btn.classList.remove(TRANSLATE_LOADING_CLASS);
-            btn.textContent = strings.buttonDone;
+            if (btn) {
+              btn.classList.remove(TRANSLATE_LOADING_CLASS);
+              btn.textContent = strings.buttonDone;
+            }
             if (error) {
               result.textContent = `${strings.errorPrefix}: ${text}`;
             }
-            clearInlineStreamState(requestId);
+            clearInlineStreamState(requestId, !error);
           }
         }
       }
@@ -855,7 +1065,14 @@ if (isExtensionContextValid()) {
         "targetLang",
         "uiLang",
         "enableXInlineTranslation",
-        "enableYoutubeInlineTranslation"
+        "enableYoutubeInlineTranslation",
+        "enableXAutoTranslation",
+        "enableYoutubeAutoTranslation",
+        "sourceLang",
+        "provider",
+        "apiUrl",
+        "model",
+        "deepseekThinkingEnabled"
       ].some((key) => Object.prototype.hasOwnProperty.call(changes, key));
       if (shouldRunInlineTranslation && inlineSettingsChanged) {
         updateInlineObserver(true);
