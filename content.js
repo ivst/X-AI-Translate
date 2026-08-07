@@ -55,7 +55,7 @@ const inlineProcessedTexts = new WeakMap();
 const INLINE_STREAM_TIMEOUT_MS = 45000;
 const AUTO_TRANSLATION_MAX_CONCURRENT = 2;
 const autoTranslationQueue = [];
-const autoTranslationVisibleTargets = new WeakSet();
+let autoTranslationVisibleTargets = new WeakSet();
 const autoTranslationPending = new WeakMap();
 const autoTranslationCompleted = new WeakMap();
 let autoTranslationObserver = null;
@@ -569,6 +569,7 @@ function observeAutoTranslationTarget(el, shouldObserve) {
 function stopAutoTranslationObserver() {
   autoTranslationGeneration += 1;
   autoTranslationQueue.length = 0;
+  autoTranslationVisibleTargets = new WeakSet();
   if (autoTranslationObserver) {
     autoTranslationObserver.disconnect();
     autoTranslationObserver = null;
