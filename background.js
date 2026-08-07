@@ -1,6 +1,6 @@
 const DEFAULT_CONFIG = {
-  provider: "openai",
-  apiUrl: "https://api.openai.com/v1",
+  provider: "googletranslate",
+  apiUrl: "https://translate.googleapis.com",
   apiKey: "",
   apiKeyByProvider: {},
   model: "gpt-4o-mini",

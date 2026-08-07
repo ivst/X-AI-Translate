@@ -1,6 +1,6 @@
 ﻿const defaultConfig = {
-  provider: "openai",
-  apiUrl: "https://api.openai.com/v1",
+  provider: "googletranslate",
+  apiUrl: "https://translate.googleapis.com",
   apiKey: "",
   apiKeyByProvider: {},
   model: "gpt-4o-mini",
@@ -543,11 +543,24 @@ function setProviderControls(provider) {
   const isDirect = Boolean(preset.direct);
   const isGoogle = provider === "googletranslate";
   const uiLang = uiLangSelect?.value || "en";
+  const strings = getLocaleStrings(uiLang);
+  const apiUrlLabel = document.getElementById("apiUrlLabel");
+  const apiUrlLabelKey = provider === "deepl"
+    ? "api_base_url_deepl"
+    : "api_base_url";
+  const apiUrlPlaceholderKey = provider === "deepl"
+    ? "api_base_url_placeholder_deepl"
+    : "api_base_url_placeholder";
 
   apiUrlControl.style.display = isGoogle ? "none" : "block";
   apiKeyControl.style.display = preset.requiresApiKey === false ? "none" : "block";
   modelControl.style.display = isDirect ? "none" : "block";
   deepseekControls.style.display = provider === "deepseek" ? "block" : "none";
+  if (apiUrlLabel) {
+    apiUrlLabel.textContent = strings[apiUrlLabelKey] || strings.api_base_url;
+  }
+  apiUrlInput.placeholder = strings[apiUrlPlaceholderKey]
+    || strings.api_base_url_placeholder;
   providerHint.textContent = DIRECT_PROVIDER_HINT_I18N[provider]?.[uiLang]
     || DIRECT_PROVIDER_HINT_I18N[provider]?.en
     || "";
