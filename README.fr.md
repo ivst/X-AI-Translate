@@ -49,3 +49,9 @@ Voir `PRIVACY_POLICY.md`.
 ## Contact
 - E-mail : `xtran@msk.onl`
 
+## Version actuelle (0.3.0)
+- Cette version utilise uniquement le mode BYOK/clés API ; le bridge d’abonnement et le native host ne sont pas inclus.
+- Google Translate est le fournisseur par défaut et ne nécessite aucune clé API. DeepL API Free nécessite une clé API DeepL.
+- La traduction automatique des posts X et commentaires YouTube visibles est optionnelle et désactivée par défaut.
+- Le mode de réflexion DeepSeek est désactivé par défaut afin de réduire la latence.
+
