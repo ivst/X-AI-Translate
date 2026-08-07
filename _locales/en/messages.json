@@ -1,5 +1,5 @@
 {
   "extDescription": {
-    "message": "Translate selected text, X posts, and YouTube comments via a configurable OpenAI-compatible API."
+    "message": "Translate selected text, X posts, and YouTube comments with API keys or a free no-key translation option."
   }
 }
