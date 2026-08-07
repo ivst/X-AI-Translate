@@ -50,10 +50,3 @@ Siehe `PRIVACY_POLICY.md`.
 
 ## Lizenz
 Dieses Projekt steht unter der MIT-Lizenz. Siehe [LICENSE](LICENSE).
-
-## Aktuelle Version (0.3.0)
-- Diese Version verwendet ausschließlich BYOK/API-Schlüssel; Subscription-Bridge und Native Host sind nicht enthalten.
-- Google Translate ist der Standardanbieter und benötigt keinen API-Schlüssel. DeepL API Free benötigt einen DeepL-API-Schlüssel.
-- Die automatische Übersetzung sichtbarer X-Posts und YouTube-Kommentare ist optional und standardmäßig deaktiviert.
-- Der DeepSeek-Denkmodus ist standardmäßig deaktiviert, um die Übersetzung zu beschleunigen.
-

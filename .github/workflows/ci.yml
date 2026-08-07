@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  extension-ci:
+    name: Extension CI
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          package-manager-cache: false
+
+      - name: Check JavaScript syntax
+        shell: bash
+        run: |
+          find . \
+            -path './.git' -prune -o \
+            -path './dist' -prune -o \
+            \( -name '*.js' -o -name '*.mjs' \) \
+            -print0 | xargs -0 -n1 node --check
+
+      - name: Validate JSON files
+        shell: bash
+        run: |
+          find . \
+            -path './.git' -prune -o \
+            -path './dist' -prune -o \
+            -name '*.json' -print0 | \
+            xargs -0 -n1 node -e \
+              'JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"))'
+
+      - name: Run background tests
+        if: ${{ hashFiles('tests/background.test.mjs') != '' }}
+        run: node tests/background.test.mjs
+
+      - name: Build extension package
+        run: node package-extension.mjs
+
+      - name: Validate extension package
+        shell: bash
+        run: |
+          version="$(node -p "require('./manifest.json').version")"
+          archive="dist/ai-translate-cws-v${version}.zip"
+          test -f "$archive"
+          unzip -t "$archive"

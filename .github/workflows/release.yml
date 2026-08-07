@@ -1,0 +1,137 @@
+name: Prepare Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: prepare-release
+  cancel-in-progress: false
+
+jobs:
+  prepare-release:
+    name: Prepare draft release
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          package-manager-cache: false
+
+      - name: Check JavaScript syntax
+        shell: bash
+        run: |
+          find . \
+            -path './.git' -prune -o \
+            -path './dist' -prune -o \
+            \( -name '*.js' -o -name '*.mjs' \) \
+            -print0 | xargs -0 -n1 node --check
+
+      - name: Validate JSON files
+        shell: bash
+        run: |
+          find . \
+            -path './.git' -prune -o \
+            -path './dist' -prune -o \
+            -name '*.json' -print0 | \
+            xargs -0 -n1 node -e \
+              'JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"))'
+
+      - name: Run background tests
+        if: ${{ hashFiles('tests/background.test.mjs') != '' }}
+        run: node tests/background.test.mjs
+
+      - name: Resolve release version
+        id: release
+        shell: bash
+        run: |
+          version="$(node -p "require('./manifest.json').version")"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Manifest version must use MAJOR.MINOR.PATCH format."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          echo "archive=dist/ai-translate-cws-v$version.zip" >> "$GITHUB_OUTPUT"
+          echo "checksum=dist/ai-translate-cws-v$version.zip.sha256" >> "$GITHUB_OUTPUT"
+
+      - name: Ensure release does not already exist
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+        shell: bash
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::error::Release $TAG already exists. Increase the manifest version first."
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "::error::Tag $TAG already exists. Increase the manifest version first."
+            exit 1
+          fi
+
+      - name: Build extension package
+        run: node package-extension.mjs
+
+      - name: Validate package and create checksum
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+          ARCHIVE: ${{ steps.release.outputs.archive }}
+        shell: bash
+        run: |
+          test -f "$ARCHIVE"
+          unzip -t "$ARCHIVE"
+          packaged_version="$(unzip -p "$ARCHIVE" manifest.json | node -e '
+            let input = "";
+            process.stdin.on("data", (chunk) => { input += chunk; });
+            process.stdin.on("end", () => process.stdout.write(JSON.parse(input).version));
+          ')"
+          if [[ "$packaged_version" != "$VERSION" ]]; then
+            echo "::error::Packaged manifest version $packaged_version does not match $VERSION."
+            exit 1
+          fi
+          archive_name="$(basename "$ARCHIVE")"
+          (cd dist && sha256sum "$archive_name" > "$archive_name.sha256")
+
+      - name: Create draft GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+          VERSION: ${{ steps.release.outputs.version }}
+          ARCHIVE: ${{ steps.release.outputs.archive }}
+          CHECKSUM: ${{ steps.release.outputs.checksum }}
+        shell: bash
+        run: |
+          gh release create "$TAG" \
+            "$ARCHIVE" \
+            "$CHECKSUM" \
+            --draft \
+            --generate-notes \
+            --target "$GITHUB_SHA" \
+            --title "AI Translate $TAG"
+          notes_file="$(mktemp)"
+          trap 'rm -f "$notes_file"' EXIT
+          gh release view "$TAG" --json body --jq '.body' > "$notes_file"
+          printf '\n## Installation\n\nDownload `ai-translate-cws-v%s.zip`, unpack it, enable Developer mode at `chrome://extensions`, click **Load unpacked**, and select the unpacked folder.\n\nFor Chrome Web Store installation, use the published store listing.\n' "$VERSION" >> "$notes_file"
+          gh release edit "$TAG" --notes-file "$notes_file"
+          release_url="$(gh release view "$TAG" --json url --jq '.url')"
+          {
+            echo "## Draft release prepared"
+            echo
+            echo "- Release: [$TAG]($release_url)"
+            echo "- Package: \`$(basename "$ARCHIVE")\`"
+            echo "- Checksum: \`$(basename "$CHECKSUM")\`"
+            echo
+            echo "Review the draft and publish it manually when ready."
+          } >> "$GITHUB_STEP_SUMMARY"
