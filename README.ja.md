@@ -49,6 +49,9 @@ Chrome Web Store: https://chromewebstore.google.com/detail/ai-translate-for-x-an
 ## 連絡先
 - Email: `xtran@msk.onl`
 
+## ライセンス
+このプロジェクトは MIT ライセンスで提供されています。[LICENSE](LICENSE) を参照してください。
+
 ## Current release (0.3.0)
 - このリリースはBYOK/APIキーのみを使用し、サブスクリプション用bridgeやnative hostは含みません。
 - Google Translateがデフォルトで、APIキーは不要です。DeepL API FreeにはDeepL APIキーが必要です。

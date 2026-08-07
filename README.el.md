@@ -49,6 +49,9 @@ Chrome Web Store: https://chromewebstore.google.com/detail/ai-translate-for-x-an
 ## Επικοινωνία
 - Email: `xtran@msk.onl`
 
+## Άδεια χρήσης
+Αυτό το έργο διατίθεται με την άδεια MIT. Δείτε το [LICENSE](LICENSE).
+
 ## Current release (0.3.0)
 - This release uses BYOK/API keys only; subscription bridge and native host are not included.
 - Google Translate is the default provider and needs no API key. DeepL API Free requires a DeepL API key.
