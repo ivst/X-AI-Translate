@@ -49,7 +49,11 @@ let selectionTimer = null;
 let isMouseSelecting = false;
 let streamSeq = 0;
 const inlineStreams = new Map();
+const inlineProcessedTexts = new WeakMap();
 const INLINE_STREAM_TIMEOUT_MS = 45000;
+let inlineObserver = null;
+let inlineScanScheduled = false;
+let pendingInlineTargets = new Set();
 let activeSelectionRequestId = null;
 let activeSelectionTimeoutId = null;
 let overlayEl = null;
@@ -66,7 +70,11 @@ function isInlineTranslationHost(hostname) {
   return INLINE_TRANSLATION_HOST_MATCHERS.some((matcher) => matcher.test(host));
 }
 
-const shouldRunInlineTranslation = isInlineTranslationHost(window.location.hostname);
+const currentHostname = window.location.hostname;
+const isXInlinePage = /(^|\.)x\.com$/i.test(currentHostname)
+  || /(^|\.)twitter\.com$/i.test(currentHostname);
+const isYoutubeInlinePage = /(^|\.)youtube\.com$/i.test(currentHostname);
+const shouldRunInlineTranslation = isInlineTranslationHost(currentHostname);
 
 function isContextInvalidationError(err) {
   const message = String(err?.message || err || "");
@@ -466,31 +474,55 @@ function isInlineTranslationEnabledForElement(el) {
   return true;
 }
 
+function isInlineTranslationEnabledForHost() {
+  if (isXInlinePage) {
+    return currentConfig.enableXInlineTranslation !== false;
+  }
+  if (isYoutubeInlinePage) {
+    return currentConfig.enableYoutubeInlineTranslation !== false;
+  }
+  return false;
+}
+
 function enhanceInlineText(el) {
   const container = getInlineContainer(el);
   if (!container) {
     return;
   }
 
+  const hasExisting = Boolean(
+    container.querySelector("[data-ai-translate]")
+  );
+  const removeExisting = () => {
+    container
+      .querySelectorAll("[data-ai-translate]")
+      .forEach((node) => node.remove());
+  };
+  if (!isInlineTranslationEnabledForElement(el)) {
+    removeExisting();
+    inlineProcessedTexts.delete(el);
+    return;
+  }
+
   const text = el.textContent?.trim() || "";
+  const previousText = inlineProcessedTexts.get(el);
+  if (previousText === text && hasExisting) {
+    return;
+  }
+
   const showButton =
-    isInlineTranslationEnabledForElement(el) &&
     shouldShowButton(text, currentConfig.targetLang);
 
-  const existing = container.querySelectorAll("[data-ai-translate]");
   if (!showButton) {
-    existing.forEach((node) => node.remove());
-    el.dataset.aiTranslateProcessed = "0";
+    removeExisting();
+    inlineProcessedTexts.delete(el);
     return;
   }
 
-  if (el.dataset.aiTranslateProcessed === "1") {
-    return;
+  if (hasExisting) {
+    removeExisting();
   }
-  if (existing.length) {
-    existing.forEach((node) => node.remove());
-  }
-  el.dataset.aiTranslateProcessed = "1";
+  inlineProcessedTexts.set(el, text);
 
   const btn = createTranslateButton();
   const result = createResultContainer();
@@ -546,10 +578,101 @@ function scanForInlineTexts() {
   document.querySelectorAll(INLINE_TRANSLATION_TEXT_SELECTOR).forEach(enhanceInlineText);
 }
 
-if (shouldRunInlineTranslation) {
-  const observer = new MutationObserver(() => scanForInlineTexts());
-  observer.observe(document.documentElement, { childList: true, subtree: true });
-  scanForInlineTexts();
+function resetInlineProcessingState() {
+  document.querySelectorAll(INLINE_TRANSLATION_TEXT_SELECTOR).forEach((el) => {
+    inlineProcessedTexts.delete(el);
+  });
+}
+
+function addInlineTarget(targets, node) {
+  if (!node) return;
+  if (node.nodeType === 3) {
+    addInlineTarget(targets, node.parentElement);
+    return;
+  }
+  if (node.nodeType !== 1) return;
+  if (node.matches(INLINE_TRANSLATION_TEXT_SELECTOR)) {
+    targets.add(node);
+  }
+  const closest = node.closest(INLINE_TRANSLATION_TEXT_SELECTOR);
+  if (closest) {
+    targets.add(closest);
+  }
+}
+
+function collectInlineTargets(targets, node) {
+  addInlineTarget(targets, node);
+  if (!node || node.nodeType !== 1) return;
+  node.querySelectorAll(INLINE_TRANSLATION_TEXT_SELECTOR).forEach((el) => targets.add(el));
+}
+
+function flushInlineTargetScan() {
+  inlineScanScheduled = false;
+  const targets = pendingInlineTargets;
+  pendingInlineTargets = new Set();
+  targets.forEach((el) => {
+    if (el.isConnected) {
+      enhanceInlineText(el);
+    }
+  });
+}
+
+function scheduleInlineTargetScan(targets) {
+  targets.forEach((el) => pendingInlineTargets.add(el));
+  if (inlineScanScheduled) return;
+  inlineScanScheduled = true;
+  if (typeof window.requestAnimationFrame === "function") {
+    window.requestAnimationFrame(flushInlineTargetScan);
+  } else {
+    setTimeout(flushInlineTargetScan, 50);
+  }
+}
+
+function handleInlineMutations(mutations) {
+  if (!isInlineTranslationEnabledForHost()) return;
+  const targets = new Set();
+  mutations.forEach((mutation) => {
+    addInlineTarget(targets, mutation.target);
+    if (mutation.type === "childList") {
+      mutation.addedNodes.forEach((node) => collectInlineTargets(targets, node));
+    }
+  });
+  if (!targets.size) return;
+  scheduleInlineTargetScan(targets);
+}
+
+function stopInlineObserver() {
+  if (inlineObserver) {
+    inlineObserver.disconnect();
+    inlineObserver = null;
+  }
+  pendingInlineTargets.clear();
+  inlineScanScheduled = false;
+}
+
+function updateInlineObserver(forceFullScan = false) {
+  if (!shouldRunInlineTranslation) return;
+
+  if (!isInlineTranslationEnabledForHost()) {
+    stopInlineObserver();
+    scanForInlineTexts();
+    return;
+  }
+
+  if (!inlineObserver) {
+    inlineObserver = new MutationObserver(handleInlineMutations);
+    inlineObserver.observe(document.documentElement, {
+      childList: true,
+      characterData: true,
+      subtree: true
+    });
+    forceFullScan = true;
+  }
+
+  if (forceFullScan) {
+    resetInlineProcessingState();
+    scanForInlineTexts();
+  }
 }
 
 function ensureOverlay() {
@@ -712,9 +835,7 @@ if (isExtensionContextValid()) {
 
     chrome.storage.sync.get(DEFAULT_CONFIG, (data) => {
       currentConfig = { ...DEFAULT_CONFIG, ...data };
-      if (shouldRunInlineTranslation) {
-        scanForInlineTexts();
-      }
+      updateInlineObserver(true);
     });
 
     chrome.storage.onChanged.addListener((changes, areaName) => {
@@ -730,20 +851,21 @@ if (isExtensionContextValid()) {
         const strings = getLocaleStrings(currentConfig.uiLang || currentConfig.targetLang);
         selectionButton.title = strings.selectionTitle;
       }
-      if (shouldRunInlineTranslation) {
-        document.querySelectorAll(INLINE_TRANSLATION_TEXT_SELECTOR).forEach((el) => {
-          el.dataset.aiTranslateProcessed = "0";
-        });
-        scanForInlineTexts();
+      const inlineSettingsChanged = [
+        "targetLang",
+        "uiLang",
+        "enableXInlineTranslation",
+        "enableYoutubeInlineTranslation"
+      ].some((key) => Object.prototype.hasOwnProperty.call(changes, key));
+      if (shouldRunInlineTranslation && inlineSettingsChanged) {
+        updateInlineObserver(true);
       }
     });
   } catch (err) {
     // Ignore when extension context is invalidated.
   }
 } else {
-  if (shouldRunInlineTranslation) {
-    scanForInlineTexts();
-  }
+  updateInlineObserver(true);
 }
 
 function handleSelectionUpdate() {
