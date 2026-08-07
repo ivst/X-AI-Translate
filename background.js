@@ -473,21 +473,85 @@ function buildTranslateRequestBody(config, text, targetLang, sourceLang, stream)
   return body;
 }
 
-function isTemperatureUnsupportedError(response, errorText) {
-  return response.status === 400
+const REQUEST_PARAMETER_CACHE_KEY = "unsupportedRequestParameters";
+const CACHEABLE_REQUEST_PARAMETERS = new Set(["temperature"]);
+
+function getRequestCapabilityKey(config, url, body) {
+  const provider = String(config.provider || "").trim().toLowerCase();
+  const endpoint = String(url || "")
+    .replace(/\/chat\/completions\/?$/i, "")
+    .replace(/\/$/, "")
+    .toLowerCase();
+  const model = String(body.model || "").trim().toLowerCase();
+  return `${provider}|${endpoint}|${model}`;
+}
+
+async function getCachedUnsupportedParameters(capabilityKey) {
+  try {
+    const data = await chrome.storage.local.get({ [REQUEST_PARAMETER_CACHE_KEY]: {} });
+    const parameters = data[REQUEST_PARAMETER_CACHE_KEY]?.[capabilityKey];
+    return new Set(Array.isArray(parameters) ? parameters : []);
+  } catch (error) {
+    return new Set();
+  }
+}
+
+async function cacheUnsupportedParameter(capabilityKey, parameter) {
+  try {
+    const data = await chrome.storage.local.get({ [REQUEST_PARAMETER_CACHE_KEY]: {} });
+    const cache = data[REQUEST_PARAMETER_CACHE_KEY]
+      && typeof data[REQUEST_PARAMETER_CACHE_KEY] === "object"
+      ? data[REQUEST_PARAMETER_CACHE_KEY]
+      : {};
+    const parameters = new Set(Array.isArray(cache[capabilityKey]) ? cache[capabilityKey] : []);
+    parameters.add(parameter);
+    await chrome.storage.local.set({
+      [REQUEST_PARAMETER_CACHE_KEY]: {
+        ...cache,
+        [capabilityKey]: [...parameters]
+      }
+    });
+  } catch (error) {
+    // A storage failure must not prevent the compatible retry from working.
+  }
+}
+
+function getUnsupportedRequestParameter(response, errorText, body) {
+  if (response.status !== 400) return "";
+  const paramMatch = errorText.match(/"param"\s*:\s*"([^"]+)"/i);
+  const parameter = paramMatch?.[1]?.trim() || "";
+  if (
+    parameter
+    && CACHEABLE_REQUEST_PARAMETERS.has(parameter)
+    && Object.prototype.hasOwnProperty.call(body, parameter)
+  ) {
+    return parameter;
+  }
+  if (
+    CACHEABLE_REQUEST_PARAMETERS.has("temperature")
+    && Object.prototype.hasOwnProperty.call(body, "temperature")
     && /temperature/i.test(errorText)
     && (/unsupported_value/i.test(errorText)
       || /only the default/i.test(errorText)
-      || /does not support/i.test(errorText));
+      || /does not support/i.test(errorText))
+  ) {
+    return "temperature";
+  }
+  return "";
 }
 
-function removeTemperature(body) {
+function removeUnsupportedParameters(body, parameters) {
   const fallbackBody = { ...body };
-  delete fallbackBody.temperature;
+  for (const parameter of parameters) {
+    delete fallbackBody[parameter];
+  }
   return fallbackBody;
 }
 
 async function requestTranslation(config, url, headers, body) {
+  const capabilityKey = getRequestCapabilityKey(config, url, body);
+  const unsupportedParameters = await getCachedUnsupportedParameters(capabilityKey);
+  let requestBody = removeUnsupportedParameters(body, unsupportedParameters);
   const urls = [url];
   if (
     config.provider === "openrouter"
@@ -501,19 +565,22 @@ async function requestTranslation(config, url, headers, body) {
     let response = await fetch(requestUrl, {
       method: "POST",
       headers,
-      body: JSON.stringify(body)
+      body: JSON.stringify(requestBody)
     });
     lastResponse = response;
 
     if (response.ok) return response;
 
     const errorText = await response.clone().text();
-    if (Object.prototype.hasOwnProperty.call(body, "temperature")
-      && isTemperatureUnsupportedError(response, errorText)) {
+    const unsupportedParameter = getUnsupportedRequestParameter(response, errorText, body);
+    if (unsupportedParameter && !unsupportedParameters.has(unsupportedParameter)) {
+      unsupportedParameters.add(unsupportedParameter);
+      await cacheUnsupportedParameter(capabilityKey, unsupportedParameter);
+      requestBody = removeUnsupportedParameters(body, unsupportedParameters);
       response = await fetch(requestUrl, {
         method: "POST",
         headers,
-        body: JSON.stringify(removeTemperature(body))
+        body: JSON.stringify(requestBody)
       });
       lastResponse = response;
       if (response.ok) return response;
