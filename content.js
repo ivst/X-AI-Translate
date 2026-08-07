@@ -490,16 +490,23 @@ function enhanceInlineText(el) {
     return;
   }
 
-  const existing = container.querySelectorAll("[data-ai-translate]");
+  const hasExisting = Boolean(
+    container.querySelector("[data-ai-translate]")
+  );
+  const removeExisting = () => {
+    container
+      .querySelectorAll("[data-ai-translate]")
+      .forEach((node) => node.remove());
+  };
   if (!isInlineTranslationEnabledForElement(el)) {
-    existing.forEach((node) => node.remove());
+    removeExisting();
     inlineProcessedTexts.delete(el);
     return;
   }
 
   const text = el.textContent?.trim() || "";
   const previousText = inlineProcessedTexts.get(el);
-  if (previousText === text && existing.length) {
+  if (previousText === text && hasExisting) {
     return;
   }
 
@@ -507,13 +514,13 @@ function enhanceInlineText(el) {
     shouldShowButton(text, currentConfig.targetLang);
 
   if (!showButton) {
-    existing.forEach((node) => node.remove());
+    removeExisting();
     inlineProcessedTexts.delete(el);
     return;
   }
 
-  if (existing.length) {
-    existing.forEach((node) => node.remove());
+  if (hasExisting) {
+    removeExisting();
   }
   inlineProcessedTexts.set(el, text);
 
@@ -640,6 +647,7 @@ function stopInlineObserver() {
     inlineObserver = null;
   }
   pendingInlineTargets.clear();
+  inlineScanScheduled = false;
 }
 
 function updateInlineObserver(forceFullScan = false) {
@@ -647,7 +655,6 @@ function updateInlineObserver(forceFullScan = false) {
 
   if (!isInlineTranslationEnabledForHost()) {
     stopInlineObserver();
-    resetInlineProcessingState();
     scanForInlineTexts();
     return;
   }
