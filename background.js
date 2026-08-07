@@ -10,6 +10,7 @@ const DEFAULT_CONFIG = {
   overlayMode: "center",
   enableXInlineTranslation: true,
   enableYoutubeInlineTranslation: true,
+  deepseekThinkingEnabled: false,
   yandexFolderId: ""
 };
 
@@ -439,7 +440,6 @@ async function getAuthorizationToken(config) {
 
 function buildTranslateRequestBody(config, text, targetLang, sourceLang, stream) {
   const prompt = buildPrompt(text, targetLang, sourceLang);
-  const configuredModel = (config.model || "").trim();
   if (config.provider === "claude") {
     return {
       model: resolveModelForProvider(config),
@@ -466,11 +466,9 @@ function buildTranslateRequestBody(config, text, targetLang, sourceLang, stream)
     stream: Boolean(stream)
   };
   if (config.provider === "deepseek") {
-    if (configuredModel === "deepseek-chat") {
-      body.thinking = { type: "disabled" };
-    } else if (configuredModel === "deepseek-reasoner") {
-      body.thinking = { type: "enabled" };
-    }
+    body.thinking = {
+      type: config.deepseekThinkingEnabled === true ? "enabled" : "disabled"
+    };
   }
   return body;
 }
