@@ -1,5 +1,5 @@
 {
   "extDescription": {
-    "message": "通过可配置的 OpenAI 兼容 API 翻译选中文本、X 帖子和 YouTube 评论。"
+    "message": "使用 API 密钥或可选的 OpenAI/Claude 订阅桥接程序翻译选中文本、X 帖子和 YouTube 评论。"
   }
 }
