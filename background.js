@@ -453,19 +453,47 @@ async function getAuthorizationToken(config) {
   }
   const provider = config.provider;
   const syncMap = config.apiKeyByProvider || {};
-  if (config.syncApiKeys) {
-    const syncKey = syncMap[provider] || config.apiKey || "";
-    if (syncKey) return syncKey;
-  }
   const localData = await chrome.storage.local.get({ apiKeyByProvider: {}, apiKey: "" });
   const localMap = localData.apiKeyByProvider || {};
-  const localKey = localMap[provider] || localData.apiKey || "";
-  const fallbackSyncKey = syncMap[provider] || config.apiKey || "";
-  const key = localKey || fallbackSyncKey;
-  if (!key) {
-    throw new Error("API key is missing. Set it in the extension options.");
+
+  if (config.syncApiKeys) {
+    let syncKey = syncMap[provider] || "";
+    if (!syncKey) {
+      const hasMappedKeys = Object.keys(syncMap).length > 0 || Object.keys(localMap).length > 0;
+      const legacyKey = localMap[provider]
+        || (!hasMappedKeys ? config.apiKey || localData.apiKey || "" : "");
+      if (legacyKey) {
+        syncKey = legacyKey;
+        await chrome.storage.sync.set({
+          apiKeyByProvider: { ...syncMap, [provider]: legacyKey },
+          apiKey: ""
+        });
+        if (localData.apiKey) {
+          await chrome.storage.local.set({ apiKey: "" });
+        }
+      }
+    } else if (config.apiKey) {
+      await chrome.storage.sync.set({ apiKey: "" });
+    }
+    if (syncKey) return syncKey;
+  } else {
+    const migratedLocalMap = { ...syncMap, ...localMap };
+    const legacyKey = Object.keys(migratedLocalMap).length === 0
+      ? localData.apiKey || config.apiKey || ""
+      : "";
+    if (legacyKey && !migratedLocalMap[provider]) {
+      migratedLocalMap[provider] = legacyKey;
+    }
+    const localKey = migratedLocalMap[provider] || "";
+    const hasLegacySyncKeys = Object.keys(syncMap).length > 0 || Boolean(config.apiKey);
+    const hasLegacyLocalKey = Boolean(localData.apiKey);
+    if (hasLegacySyncKeys || hasLegacyLocalKey) {
+      await chrome.storage.local.set({ apiKeyByProvider: migratedLocalMap, apiKey: "" });
+      await chrome.storage.sync.set({ apiKeyByProvider: {}, apiKey: "" });
+    }
+    if (localKey) return localKey;
   }
-  return key;
+  throw new Error("API key is missing. Set it in the extension options.");
 }
 
 function buildTranslateRequestBody(config, text, targetLang, sourceLang, stream) {
