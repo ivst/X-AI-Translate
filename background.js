@@ -510,39 +510,43 @@ async function getAuthorizationToken(config) {
   const syncMap = config.apiKeyByProvider || {};
   const localData = await chrome.storage.local.get({ apiKeyByProvider: {}, apiKey: "" });
   const localMap = localData.apiKeyByProvider || {};
+  const hasMappedKeys = Object.keys(syncMap).length > 0 || Object.keys(localMap).length > 0;
+
+  if (hasMappedKeys) {
+    const cleanupTasks = [];
+    if (config.apiKey) {
+      cleanupTasks.push(chrome.storage.sync.set({ apiKey: "" }));
+    }
+    if (localData.apiKey) {
+      cleanupTasks.push(chrome.storage.local.set({ apiKey: "" }));
+    }
+    await Promise.all(cleanupTasks);
+  }
 
   if (config.syncApiKeys) {
     let syncKey = syncMap[provider] || "";
-    if (!syncKey) {
-      const hasMappedKeys = Object.keys(syncMap).length > 0 || Object.keys(localMap).length > 0;
-      const legacyKey = localMap[provider]
-        || (!hasMappedKeys ? config.apiKey || localData.apiKey || "" : "");
+    if (!syncKey && !hasMappedKeys) {
+      const legacyKey = config.apiKey || localData.apiKey || "";
       if (legacyKey) {
         syncKey = legacyKey;
         await chrome.storage.sync.set({
           apiKeyByProvider: { ...syncMap, [provider]: legacyKey },
           apiKey: ""
         });
-        if (localData.apiKey) {
-          await chrome.storage.local.set({ apiKey: "" });
-        }
+        await chrome.storage.local.set({ apiKeyByProvider: {}, apiKey: "" });
       }
-    } else if (config.apiKey) {
-      await chrome.storage.sync.set({ apiKey: "" });
     }
     if (syncKey) return syncKey;
   } else {
-    const migratedLocalMap = { ...syncMap, ...localMap };
-    const legacyKey = Object.keys(migratedLocalMap).length === 0
+    const migratedLocalMap = { ...localMap };
+    const legacyKey = !hasMappedKeys
       ? localData.apiKey || config.apiKey || ""
       : "";
     if (legacyKey && !migratedLocalMap[provider]) {
       migratedLocalMap[provider] = legacyKey;
     }
     const localKey = migratedLocalMap[provider] || "";
-    const hasLegacySyncKeys = Object.keys(syncMap).length > 0 || Boolean(config.apiKey);
-    const hasLegacyLocalKey = Boolean(localData.apiKey);
-    if (hasLegacySyncKeys || hasLegacyLocalKey) {
+    if (legacyKey) {
       await chrome.storage.local.set({ apiKeyByProvider: migratedLocalMap, apiKey: "" });
       await chrome.storage.sync.set({ apiKeyByProvider: {}, apiKey: "" });
     }
