@@ -52,6 +52,7 @@ Chrome extension for translating selected text, X (Twitter) posts, and YouTube c
 - Quick selection button toggle.
 - Optional API key sync across devices with security warning.
 - Separate toggles to show or hide translate buttons on X and YouTube.
+- Optional automatic translation of visible X posts and YouTube comments (disabled by default).
 
 ## Permissions
 - The content script runs on `<all_urls>` to detect text selections and render inline translation UI where supported.
