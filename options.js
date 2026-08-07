@@ -3,6 +3,8 @@
   apiUrl: "https://translate.googleapis.com",
   apiKey: "",
   apiKeyByProvider: {},
+  authMode: "apiKey",
+  authModeByProvider: {},
   model: "gpt-4o-mini",
   targetLang: "en",
   sourceLang: "auto",
@@ -128,9 +130,26 @@ const setupLinkYandex = document.getElementById("setupLinkYandex");
 const syncApiKeysCheckbox = document.getElementById("syncApiKeys");
 const syncApiKeysLabel = document.getElementById("syncApiKeysLabel");
 const syncApiKeysHelp = document.getElementById("syncApiKeysHelp");
+const authModeControl = document.getElementById("authModeControl");
+const authModeInputs = Array.from(document.querySelectorAll("input[name='authMode']"));
+const subscriptionControls = document.getElementById("subscriptionControls");
+const subscriptionStatus = document.getElementById("subscriptionStatus");
+const subscriptionHint = document.getElementById("subscriptionHint");
+const subscriptionConnectButton = document.getElementById("subscriptionConnect");
+const subscriptionDisconnectButton = document.getElementById("subscriptionDisconnect");
+const subscriptionHelpButton = document.getElementById("subscriptionHelp");
+const subscriptionInstructionsDialog = document.getElementById("subscriptionInstructionsDialog");
+const subscriptionInstructionsProvider = document.getElementById("subscriptionInstructionsProvider");
+const subscriptionInstructionsInstallCommand = document.getElementById("subscriptionInstructionsInstallCommand");
+const subscriptionInstructionsLoginCommand = document.getElementById("subscriptionInstructionsLoginCommand");
+const subscriptionInstructionsOpenTabButton = document.getElementById("subscriptionInstructionsOpenTab");
+const subscriptionInstructionsCloseButton = document.getElementById("subscriptionInstructionsClose");
+const subscriptionInstructionsCloseIcon = document.getElementById("subscriptionInstructionsCloseIcon");
 
 let savedCustomApiUrl = "";
 let savedCustomModel = "";
+let currentAuthMode = "apiKey";
+let savedAuthModes = {};
 
 const OPENROUTER_CACHE_KEY = "openrouter_models_cache";
 const OPENROUTER_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
@@ -329,8 +348,186 @@ const DIRECT_PROVIDER_HINT_I18N = {
   }
 };
 
+const SUBSCRIPTION_PROVIDERS = new Set(["openai", "claude"]);
+const SUBSCRIPTION_HINT_I18N = {
+  openai: {
+    en: "Uses your ChatGPT plan through the local Codex bridge. API-key mode remains available.",
+    ru: "Использует ваш план ChatGPT через локальный bridge Codex. Режим API-ключа остаётся доступным."
+  },
+  claude: {
+    en: "Uses your Claude Pro/Max plan through the local Claude Code bridge. API-key mode remains available.",
+    ru: "Использует ваш план Claude Pro/Max через локальный bridge Claude Code. Режим API-ключа остаётся доступным."
+  }
+};
+const SUBSCRIPTION_SETUP_NOTE_I18N = {
+  openai: {
+    en: {
+      intro: "Subscription mode uses the local Codex bridge and your ChatGPT plan.",
+      warning: "The bridge must be running on this computer. API-key mode remains available."
+    },
+    ru: {
+      intro: "Режим подписки использует локальный bridge Codex и ваш план ChatGPT.",
+      warning: "Bridge должен быть запущен на этом компьютере. Режим API-ключа остаётся доступным."
+    }
+  },
+  claude: {
+    en: {
+      intro: "Subscription mode uses the local Claude Code bridge and your Claude Pro/Max plan.",
+      warning: "The bridge must be running on this computer. API-key mode remains available."
+    },
+    ru: {
+      intro: "Режим подписки использует локальный bridge Claude Code и ваш план Claude Pro/Max.",
+      warning: "Bridge должен быть запущен на этом компьютере. Режим API-ключа остаётся доступным."
+    }
+  }
+};
+
+function supportsSubscription(provider) {
+  return SUBSCRIPTION_PROVIDERS.has(provider);
+}
+
+function getAuthModeForProvider(data, provider) {
+  const configured = data.authModeByProvider?.[provider]
+    || (data.provider === provider ? data.authMode : "apiKey");
+  return supportsSubscription(provider) && configured === "subscription"
+    ? "subscription"
+    : "apiKey";
+}
+
+function sendSubscriptionMessage(action, provider) {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage({ action, provider }, (response) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      if (!response?.ok) {
+        reject(new Error(response?.error || "Subscription bridge request failed."));
+        return;
+      }
+      resolve(response);
+    });
+  });
+}
+
+function setSubscriptionStatus(text, isError = false, connected = false) {
+  if (!subscriptionStatus) return;
+  subscriptionStatus.textContent = text;
+  subscriptionStatus.style.color = isError ? "#b42318" : "";
+  if (subscriptionConnectButton) {
+    subscriptionConnectButton.style.display = connected ? "none" : "inline-block";
+  }
+  if (subscriptionDisconnectButton) {
+    subscriptionDisconnectButton.style.display = connected ? "inline-block" : "none";
+  }
+}
+
+function refreshSubscriptionStatus(provider) {
+  if (!supportsSubscription(provider) || currentAuthMode !== "subscription") return;
+  const strings = getLocaleStrings(uiLangSelect?.value || "en");
+  setSubscriptionStatus(strings.subscription_status_checking || "Checking connection...", false, false);
+  sendSubscriptionMessage("subscriptionStatus", provider)
+    .then((data) => {
+      if (data.authenticated === true) {
+        const account = data.account ? ` (${data.account})` : "";
+        setSubscriptionStatus(
+          `${strings.subscription_status_connected || "Connected"}${account}`,
+          false,
+          true
+        );
+      } else if (data.authenticated === false) {
+        setSubscriptionStatus(
+          strings.subscription_status_login_required || "Login required",
+          false,
+          false
+        );
+      } else {
+        setSubscriptionStatus(
+          strings.subscription_status_not_verified || "Install and sign in to the provider CLI",
+          false,
+          false
+        );
+      }
+    })
+    .catch((err) => {
+      setSubscriptionStatus(err.message || strings.subscription_status_bridge_unavailable, true, false);
+    });
+}
+
+async function updateSubscriptionStatusAfterLogin(provider) {
+  const strings = getLocaleStrings(uiLangSelect?.value || "en");
+  try {
+    const result = await sendSubscriptionMessage("subscriptionLogin", provider);
+    setSubscriptionStatus(
+      result.message || strings.subscription_status_login_started || "Login started in the local bridge.",
+      false,
+      false
+    );
+    window.setTimeout(() => refreshSubscriptionStatus(provider), 1500);
+  } catch (err) {
+    setSubscriptionStatus(err.message || "Subscription login failed.", true, false);
+  }
+}
+
 function getLocaleStrings(lang) {
   return window.AITranslateI18n.getOptionsStrings(lang);
+}
+
+const SUBSCRIPTION_INSTRUCTION_CONFIG = {
+  openai: {
+    providerKey: "subscription_instructions_provider_openai",
+    installCommand: "npm install -g @openai/codex",
+    loginCommand: "codex login"
+  },
+  claude: {
+    providerKey: "subscription_instructions_provider_claude",
+    installCommand: "npm install -g @anthropic-ai/claude-code",
+    loginCommand: "claude"
+  }
+};
+
+function getSubscriptionInstructionConfig(provider) {
+  return SUBSCRIPTION_INSTRUCTION_CONFIG[provider] || SUBSCRIPTION_INSTRUCTION_CONFIG.openai;
+}
+
+function getSubscriptionInstructionsUrl(provider) {
+  const lang = encodeURIComponent(uiLangSelect?.value || "en");
+  const selectedProvider = encodeURIComponent(
+    SUBSCRIPTION_INSTRUCTION_CONFIG[provider] ? provider : "openai"
+  );
+  return `${chrome.runtime.getURL("bridge-instructions.html")}?provider=${selectedProvider}&lang=${lang}`;
+}
+
+function applySubscriptionInstructionContent(lang, provider) {
+  if (!subscriptionInstructionsDialog) return;
+  const strings = getLocaleStrings(lang || "en");
+  const config = getSubscriptionInstructionConfig(provider);
+  if (subscriptionInstructionsProvider) {
+    subscriptionInstructionsProvider.textContent = strings[config.providerKey] || strings.subscription_instructions_provider_openai;
+  }
+  if (subscriptionInstructionsInstallCommand) {
+    subscriptionInstructionsInstallCommand.textContent = config.installCommand;
+  }
+  if (subscriptionInstructionsLoginCommand) {
+    subscriptionInstructionsLoginCommand.textContent = config.loginCommand;
+  }
+}
+
+function openSubscriptionInstructionsTab() {
+  window.open(getSubscriptionInstructionsUrl(providerSelect.value), "_blank", "noopener,noreferrer");
+}
+
+function openSubscriptionInstructionsDialog() {
+  applySubscriptionInstructionContent(uiLangSelect.value, providerSelect.value);
+  if (typeof subscriptionInstructionsDialog?.showModal === "function") {
+    subscriptionInstructionsDialog.showModal();
+  }
+}
+
+function closeSubscriptionInstructionsDialog() {
+  if (typeof subscriptionInstructionsDialog?.close === "function" && subscriptionInstructionsDialog.open) {
+    subscriptionInstructionsDialog.close();
+  }
 }
 
 function applyTranslations(lang) {
@@ -348,15 +545,21 @@ function applyTranslations(lang) {
       el.setAttribute("placeholder", strings[key]);
     }
   });
+  applySubscriptionInstructionContent(lang, providerSelect?.value);
 }
 
 function applySetupNoteTranslations(lang) {
   const strings = SETUP_NOTE_I18N[lang] || SETUP_NOTE_I18N.en;
   const syncStrings = SYNC_KEYS_I18N[lang] || SYNC_KEYS_I18N.en;
+  const subscriptionNote = currentAuthMode === "subscription"
+    ? SUBSCRIPTION_SETUP_NOTE_I18N[providerSelect.value]?.[lang]
+      || SUBSCRIPTION_SETUP_NOTE_I18N[providerSelect.value]?.en
+    : null;
   const directNote = DIRECT_PROVIDER_SETUP_NOTE_I18N[providerSelect.value]?.[lang]
     || DIRECT_PROVIDER_SETUP_NOTE_I18N[providerSelect.value]?.en;
-  setupNoteIntro.textContent = directNote?.intro || strings.intro;
-  setupNoteWarning.textContent = directNote?.warning || strings.warning;
+  const note = subscriptionNote || directNote;
+  setupNoteIntro.textContent = note?.intro || strings.intro;
+  setupNoteWarning.textContent = note?.warning || strings.warning;
   setupNoteLinksLabel.textContent = strings.links;
   setupLinkOpenAI.textContent = "OpenAI";
   if (setupLinkClaude) {
@@ -551,11 +754,28 @@ function setProviderControls(provider) {
   const apiUrlPlaceholderKey = provider === "deepl"
     ? "api_base_url_placeholder_deepl"
     : "api_base_url_placeholder";
+  const subscriptionSupported = supportsSubscription(provider);
+  if (!subscriptionSupported && currentAuthMode === "subscription") {
+    currentAuthMode = "apiKey";
+  }
+  const subscriptionSelected = subscriptionSupported && currentAuthMode === "subscription";
 
-  apiUrlControl.style.display = isGoogle ? "none" : "block";
-  apiKeyControl.style.display = preset.requiresApiKey === false ? "none" : "block";
-  modelControl.style.display = isDirect ? "none" : "block";
+  apiUrlControl.style.display = isGoogle || subscriptionSelected ? "none" : "block";
+  apiKeyControl.style.display = preset.requiresApiKey === false || subscriptionSelected
+    ? "none"
+    : "block";
+  modelControl.style.display = isDirect || subscriptionSelected ? "none" : "block";
   deepseekControls.style.display = provider === "deepseek" ? "block" : "none";
+  authModeControl.style.display = subscriptionSupported ? "block" : "none";
+  subscriptionControls.style.display = subscriptionSelected ? "block" : "none";
+  authModeInputs.forEach((input) => {
+    input.checked = input.value === (subscriptionSelected ? "subscription" : "apiKey");
+  });
+  if (subscriptionSelected) {
+    subscriptionHint.textContent = SUBSCRIPTION_HINT_I18N[provider]?.[uiLang]
+      || SUBSCRIPTION_HINT_I18N[provider]?.en
+      || strings.subscription_hint;
+  }
   if (apiUrlLabel) {
     apiUrlLabel.textContent = strings[apiUrlLabelKey] || strings.api_base_url;
   }
@@ -1060,6 +1280,8 @@ async function getOpenrouterModels(apiKey, freeOnly, source) {
 
 chrome.storage.sync.get(defaultConfig, (data) => {
   const provider = data.provider || defaultConfig.provider;
+  savedAuthModes = { ...(data.authModeByProvider || {}) };
+  currentAuthMode = getAuthModeForProvider(data, provider);
   savedCustomApiUrl = data.customApiUrl || "";
   savedCustomModel = data.customModel || "";
   providerSelect.value = provider;
@@ -1118,6 +1340,7 @@ chrome.storage.sync.get(defaultConfig, (data) => {
   applyTranslations(uiLang);
   applySetupNoteTranslations(uiLang);
   setProviderControls(providerSelect.value);
+  refreshSubscriptionStatus(providerSelect.value);
   document.getElementById("extVersion").textContent =
     "v" + chrome.runtime.getManifest().version;
   chrome.storage.local.get({ apiKeyByProvider: {}, apiKey: "" }, (localData) => {
@@ -1199,6 +1422,7 @@ chrome.storage.sync.get(defaultConfig, (data) => {
 
 providerSelect.addEventListener("change", () => {
   const provider = providerSelect.value;
+  currentAuthMode = "apiKey";
   applyProviderDefaults(provider, provider === "custom" ? savedCustomModel : "");
   setOpenrouterControlsVisible(provider === "openrouter");
   setYandexControlsVisible(provider === "yandexgpt");
@@ -1208,10 +1432,17 @@ providerSelect.addEventListener("change", () => {
     chrome.storage.local.get({ apiKeyByProvider: {}, apiKey: "" }, (localData) => {
       savedCustomApiUrl = data.customApiUrl || savedCustomApiUrl;
       savedCustomModel = data.customModel || savedCustomModel;
+      savedAuthModes = { ...(data.authModeByProvider || {}), ...savedAuthModes };
+      currentAuthMode = savedAuthModes[provider] === "subscription"
+        ? "subscription"
+        : getAuthModeForProvider(data, provider);
       if (provider === "custom") {
         apiUrlInput.value = savedCustomApiUrl || "";
         modelCustomInput.value = savedCustomModel || "";
       }
+      setProviderControls(provider);
+      applySetupNoteTranslations(uiLangSelect.value);
+      refreshSubscriptionStatus(provider);
       apiKeyInput.value = getKeyByProviderFromStore(provider, data, localData, Boolean(data.syncApiKeys));
       yandexFolderInput.value = data.yandexFolderId || defaultConfig.yandexFolderId;
       if (provider === "openai" && apiKeyInput.value.trim()) {
@@ -1275,6 +1506,44 @@ providerSelect.addEventListener("change", () => {
       }
     });
   });
+});
+
+authModeInputs.forEach((input) => {
+  input.addEventListener("change", () => {
+    if (!input.checked) return;
+    currentAuthMode = input.value === "subscription" ? "subscription" : "apiKey";
+    savedAuthModes[providerSelect.value] = currentAuthMode;
+    setProviderControls(providerSelect.value);
+    applySetupNoteTranslations(uiLangSelect.value);
+    if (currentAuthMode === "subscription") {
+      refreshSubscriptionStatus(providerSelect.value);
+    }
+  });
+});
+
+subscriptionConnectButton.addEventListener("click", () => {
+  updateSubscriptionStatusAfterLogin(providerSelect.value);
+});
+
+subscriptionDisconnectButton.addEventListener("click", async () => {
+  const provider = providerSelect.value;
+  const strings = getLocaleStrings(uiLangSelect.value);
+  try {
+    await sendSubscriptionMessage("subscriptionLogout", provider);
+    setSubscriptionStatus(strings.subscription_status_not_connected || "Not connected", false, false);
+  } catch (err) {
+    setSubscriptionStatus(err.message || "Subscription logout failed.", true, false);
+  }
+});
+
+subscriptionHelpButton.addEventListener("click", openSubscriptionInstructionsDialog);
+subscriptionInstructionsOpenTabButton.addEventListener("click", openSubscriptionInstructionsTab);
+subscriptionInstructionsCloseButton.addEventListener("click", closeSubscriptionInstructionsDialog);
+subscriptionInstructionsCloseIcon.addEventListener("click", closeSubscriptionInstructionsDialog);
+subscriptionInstructionsDialog.addEventListener("click", (event) => {
+  if (event.target === subscriptionInstructionsDialog) {
+    closeSubscriptionInstructionsDialog();
+  }
 });
 
 apiUrlInput.addEventListener("input", () => {
@@ -1477,6 +1746,11 @@ document.getElementById("save").addEventListener("click", () => {
     provider,
     apiUrl: normalizeProviderApiUrl(provider, apiUrlInput.value),
     model: modelValue,
+    authMode: currentAuthMode,
+    authModeByProvider: {
+      ...savedAuthModes,
+      [provider]: currentAuthMode
+    },
     customApiUrl: savedCustomApiUrl,
     customModel: savedCustomModel,
     targetLang: targetLangSelect.value,
@@ -1502,6 +1776,10 @@ document.getElementById("save").addEventListener("click", () => {
   }
 
   chrome.storage.sync.set(config, () => {
+    if (currentAuthMode === "subscription") {
+      setStatus(getLocaleStrings(uiLangSelect.value).status_saved, false);
+      return;
+    }
     migrateKeyStorage(syncApiKeys, provider, () => {
       const currentKey = apiKeyInput.value.trim();
       if (syncApiKeys) {

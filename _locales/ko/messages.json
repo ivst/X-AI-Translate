@@ -1,5 +1,5 @@
 {
   "extDescription": {
-    "message": "API 키 또는 키가 필요 없는 무료 기능으로 선택한 텍스트, X 게시물, YouTube 댓글을 번역합니다."
+    "message": "API 키 또는 선택 가능한 OpenAI/Claude 구독 브리지로 선택한 텍스트, X 게시물, YouTube 댓글을 번역합니다."
   }
 }

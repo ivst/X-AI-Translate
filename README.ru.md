@@ -1,4 +1,4 @@
-# AI Translate для X и YouTube (BYOK)
+# AI Translate для X и YouTube
 
 [![AI Translate in Chrome Web Store](ai-adv-large.png)](https://chromewebstore.google.com/detail/ai-translate-for-x-and-yo/ccgnhaicdhdhhangmfkddcippajhbbji)
 
@@ -21,7 +21,7 @@ Chrome Web Store: https://chromewebstore.google.com/detail/ai-translate-for-x-an
 
 ## Использование
 1. Откройте всплывающее окно → нажмите **Settings** (страница параметров).
-2. Выберите провайдера. Для Google Translate ключ не нужен, а для DeepL API Free нужен API-ключ DeepL. Настройте остальные поля, языки и режим вывода.
+2. Выберите провайдера. Для Google Translate ключ не нужен, а для DeepL API Free нужен API-ключ DeepL. Для OpenAI и Claude также доступен дополнительный локальный режим подписки через [AI Translate Bridge](https://github.com/ivst/X-AI-Translate-Bridge).
 3. На любой странице выделите текст и используйте контекстное меню или горячую клавишу.
 4. В X и комментариях YouTube нажмите «Перевести текст» под поддерживаемым блоком контента, чтобы увидеть встроенный перевод. Эти кнопки можно отключить в разделе Settings.
 
@@ -35,6 +35,11 @@ Chrome Web Store: https://chromewebstore.google.com/detail/ai-translate-for-x-an
 - Отдельные переключатели для показа кнопок перевода в X и YouTube.
 - Дополнительная синхронизация ключей API между устройствами с предупреждением безопасности.
 - Необязательный автоперевод видимых постов X и комментариев YouTube (по умолчанию выключен).
+- Необязательный режим подписки для OpenAI (Codex) и Claude (Claude Code); режим API-ключа остаётся основным.
+
+## Режим подписки
+
+Режим подписки включается вручную и требует отдельно скачанного [AI Translate Bridge](https://github.com/ivst/X-AI-Translate-Bridge) и авторизованного CLI провайдера. Установите bundle bridge, затем выберите режим «Подписка» в настройках. Gemini и остальные провайдеры продолжают работать через существующий режим API-ключа.
 
 ## Разрешения
 - Скрипт контента работает на `<all_urls>`, чтобы отслеживать выделение текста и показывать встроенный интерфейс перевода там, где это поддерживается.
@@ -44,9 +49,10 @@ Chrome Web Store: https://chromewebstore.google.com/detail/ai-translate-for-x-an
 ## Разработка
 - Загрузить распакованный в `chrome://extensions`
 - Входные файлы: `background.js`, `content.js`, `popup.html`, `popup.js`, `options.html`, `options.js`
+- Для сборки архива Chrome Web Store выполните `node package-extension.mjs`. Папка локального bridge и файлы его установки в пакет не входят; не загружайте в магазин корень репозитория напрямую.
 
 ## Конфиденциальность
-Выделенный текст отправляется только на настроенную вами конечную точку API.
+Выделенный текст отправляется только на настроенную вами конечную точку API или в локальный bridge при включённом режиме подписки.
 См. `PRIVACY_POLICY.md`.
 
 ## Контакт

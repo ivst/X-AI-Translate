@@ -5,7 +5,8 @@ Summary
   - selected text on web pages,
   - inline text on X (Twitter) and YouTube comments when you press the translate button,
   - text entered by you in the popup "Quick Translate" fields.
-- Text is sent only to the translation provider endpoint you configure (including Google Translate's free web endpoint, DeepL API Free, OpenAI-compatible/custom, or other supported native providers).
+- In optional subscription mode, text is sent to the local bridge at `127.0.0.1`, which forwards it through the authenticated provider CLI to OpenAI or Claude. Provider credentials remain managed by the official CLI tools.
+- In API-key mode, text is sent only to the translation provider endpoint you configure (including Google Translate's free web endpoint, DeepL API Free, OpenAI-compatible/custom, or other supported native providers).
 - The extension stores settings in Chrome storage to keep your configuration between sessions.
 
 Data We Process
@@ -21,6 +22,7 @@ Data We Process
 
 How We Use Data
 - To send translation requests to the provider you selected.
+- In subscription mode, to pass translation requests through the local bridge and the authenticated provider CLI.
 - To show translation results in-page and in popup.
 - To persist your settings and improve usability (last result/error, model caches).
 
@@ -31,11 +33,12 @@ API Keys and Storage
 
 Data Sharing
 - Translation text is sent only to the API endpoint/provider you configured.
+- In optional subscription mode, translation text is sent to the local bridge and then to the selected OpenAI or Claude provider through its CLI session.
 - We do not sell personal data and do not share data with unrelated third parties.
 
 Remote Code
 - The extension does not download or execute remote JavaScript/WASM code.
-- Network access is used only for HTTPS API requests and receiving text responses.
+- Network access is used for HTTPS API requests, the explicitly configured local bridge, and receiving text responses.
 
 Retention
 - Settings remain until you change or remove them.

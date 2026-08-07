@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Subscription bridge instructions</title>
+    <style>
+      :root {
+        --bg: #f5f2ea;
+        --panel: #ffffff;
+        --ink: #1c1b19;
+        --muted: #6f6b63;
+        --accent: #1d9bf0;
+        --accent-dark: #1577b8;
+      }
+      body {
+        margin: 0;
+        color: var(--ink);
+        background: radial-gradient(1000px 500px at 10% -10%, #e5f3ff 0%, rgba(229, 243, 255, 0) 60%),
+          radial-gradient(800px 450px at 100% 0%, #fff0d9 0%, rgba(255, 240, 217, 0) 55%),
+          var(--bg);
+        font-family: "Space Grotesk", "Segoe UI", sans-serif;
+      }
+      .page {
+        width: min(720px, calc(100vw - 40px));
+        margin: 36px auto;
+      }
+      .panel {
+        padding: 24px;
+        background: var(--panel);
+        border: 1px solid rgba(0, 0, 0, 0.05);
+        border-radius: 16px;
+        box-shadow: 0 12px 30px rgba(18, 18, 18, 0.08);
+      }
+      .header {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        margin-bottom: 22px;
+      }
+      .logo {
+        width: 42px;
+        height: 42px;
+        border-radius: 12px;
+      }
+      h1 {
+        margin: 0;
+        font-size: 23px;
+      }
+      h2 {
+        margin: 0 0 8px;
+        font-size: 18px;
+      }
+      p,
+      li {
+        font-size: 14px;
+        line-height: 1.55;
+      }
+      .subtitle {
+        margin: 4px 0 0;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      ol {
+        padding-left: 22px;
+        margin: 18px 0;
+      }
+      li + li {
+        margin-top: 16px;
+      }
+      code {
+        display: block;
+        overflow-x: auto;
+        margin-top: 7px;
+        padding: 10px 12px;
+        border-radius: 9px;
+        background: #f3f0e9;
+        font-size: 13px;
+        white-space: pre-wrap;
+      }
+      .note {
+        padding: 12px 14px;
+        color: #8b4d1f;
+        background: #fffaf0;
+        border: 1px solid #efe1c7;
+        border-radius: 10px;
+        font-size: 13px;
+        line-height: 1.5;
+      }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 22px;
+      }
+      a {
+        display: inline-block;
+        padding: 10px 14px;
+        color: #fff;
+        background: var(--accent);
+        border-radius: 10px;
+        text-decoration: none;
+        font-size: 13px;
+      }
+      a:hover {
+        background: var(--accent-dark);
+      }
+      a.secondary {
+        color: var(--accent-dark);
+        background: transparent;
+        border: 1px solid #b9d8ee;
+      }
+      a.secondary:hover {
+        background: #eef8ff;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <section class="panel">
+        <div class="header">
+          <img class="logo" src="icon128.png" alt="AI Translate" />
+          <div>
+            <h1 data-i18n="subscription_instructions_title">Set up OpenAI/Claude subscription access</h1>
+            <p class="subtitle" data-i18n="subscription_instructions_subtitle">Install the separate Bridge once; the extension connects to its local background service.</p>
+          </div>
+        </div>
+
+        <h2 id="subscriptionInstructionsProvider"></h2>
+        <ol>
+          <li>
+            <span data-i18n="subscription_instructions_step_install">Install the CLI for the selected provider.</span>
+            <code id="subscriptionInstructionsInstallCommand"></code>
+          </li>
+          <li>
+            <span data-i18n="subscription_instructions_step_login">Sign in to the provider account.</span>
+            <code id="subscriptionInstructionsLoginCommand"></code>
+          </li>
+          <li>
+            <span data-i18n="subscription_instructions_step_bridge">Download and install the AI Translate Bridge bundle for your operating system from the documentation.</span>
+          </li>
+          <li data-i18n="subscription_instructions_step_connect">Return to Settings, select Subscription, and click Connect. No terminal is needed after installation.</li>
+        </ol>
+
+        <div class="note" data-i18n="subscription_instructions_note">
+          The extension does not install or execute external files. After the one-time bridge installation, it runs in the background. API-key mode remains available at any time.
+        </div>
+
+        <p><a href="https://github.com/ivst/X-AI-Translate-Bridge/blob/main/README.md" target="_blank" rel="noopener noreferrer" data-i18n="subscription_instructions_docs">Open bridge documentation</a></p>
+
+        <div class="actions">
+          <a class="secondary" href="options.html" data-i18n="subscription_instructions_back">Back to settings</a>
+        </div>
+      </section>
+    </main>
+    <script src="i18n.js"></script>
+    <script src="bridge-instructions.js"></script>
+  </body>
+</html>

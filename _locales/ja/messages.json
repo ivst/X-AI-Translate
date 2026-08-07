@@ -1,5 +1,5 @@
 {
   "extDescription": {
-    "message": "APIキーまたはキー不要の無料機能で、選択テキスト、X投稿、YouTubeコメントを翻訳します。"
+    "message": "選択したテキスト、X投稿、YouTubeコメントをAPIキーまたは任意のOpenAI/Claudeサブスクリプションブリッジで翻訳します。"
   }
 }

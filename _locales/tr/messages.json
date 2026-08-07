@@ -1,5 +1,5 @@
 {
   "extDescription": {
-    "message": "Seçili metni, X gönderilerini ve YouTube yorumlarını API anahtarlarıyla veya ücretsiz, anahtarsız çevirir."
+    "message": "Seçili metni, X gönderilerini ve YouTube yorumlarını API anahtarları veya isteğe bağlı OpenAI/Claude abonelik köprüsüyle çevirir."
   }
 }

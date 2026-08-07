@@ -3,6 +3,8 @@ const DEFAULT_CONFIG = {
   apiUrl: "https://translate.googleapis.com",
   apiKey: "",
   apiKeyByProvider: {},
+  authMode: "apiKey",
+  authModeByProvider: {},
   model: "gpt-4o-mini",
   targetLang: "en",
   sourceLang: "auto",
@@ -13,6 +15,66 @@ const DEFAULT_CONFIG = {
   deepseekThinkingEnabled: false,
   yandexFolderId: ""
 };
+
+const SUBSCRIPTION_PROVIDERS = new Set(["openai", "claude"]);
+const SUBSCRIPTION_BRIDGE_URL = "http://127.0.0.1:32123";
+
+function getSubscriptionBridgeStartHint() {
+  return "Download and install AI Translate Bridge from the subscription instructions.";
+}
+
+function supportsSubscription(provider) {
+  return SUBSCRIPTION_PROVIDERS.has(provider);
+}
+
+function getAuthMode(config) {
+  const provider = config.provider;
+  const configured = config.authModeByProvider?.[provider]
+    || config.authMode
+    || "apiKey";
+  return supportsSubscription(provider) && configured === "subscription"
+    ? "subscription"
+    : "apiKey";
+}
+
+function usesSubscriptionAuth(config) {
+  return getAuthMode(config) === "subscription";
+}
+
+async function requestSubscriptionBridge(path, body = {}) {
+  let response;
+  try {
+    response = await fetch(`${SUBSCRIPTION_BRIDGE_URL}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+  } catch (_) {
+    throw new Error(`Subscription bridge is not running. ${getSubscriptionBridgeStartHint()}`);
+  }
+  let data = {};
+  try {
+    data = await response.json();
+  } catch (_) {
+    data = {};
+  }
+  if (!response.ok || data.ok === false) {
+    throw new Error(data.error || `Subscription bridge error ${response.status}.`);
+  }
+  return data;
+}
+
+async function getSubscriptionStatus(provider) {
+  return requestSubscriptionBridge("/v1/auth/status", { provider });
+}
+
+async function startSubscriptionLogin(provider) {
+  return requestSubscriptionBridge("/v1/auth/login", { provider });
+}
+
+async function logoutSubscription(provider) {
+  return requestSubscriptionBridge("/v1/auth/logout", { provider });
+}
 
 function isUnsupportedTabUrl(url) {
   if (!url) return false;
@@ -533,12 +595,96 @@ function extractDeltaFromOpenAIChunk(json) {
   return typeof textDelta === "string" ? textDelta : "";
 }
 
+async function streamSubscriptionTranslation(text, config, targetLang, sourceLang, onUpdate) {
+  let response;
+  try {
+    response = await fetch(`${SUBSCRIPTION_BRIDGE_URL}/v1/translate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        provider: config.provider,
+        model: usesSubscriptionAuth(config) ? "" : resolveModelForProvider(config),
+        text,
+        targetLang,
+        sourceLang
+      })
+    });
+  } catch (_) {
+    throw new Error(`Subscription bridge is not running. ${getSubscriptionBridgeStartHint()}`);
+  }
+
+  if (!response.ok || !response.body) {
+    let errorText = "Subscription bridge request failed.";
+    try {
+      const data = await response.json();
+      errorText = data.error || errorText;
+    } catch (_) {
+      const textBody = await response.text();
+      if (textBody) errorText = textBody;
+    }
+    throw new Error(errorText);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder("utf-8");
+  let buffer = "";
+  let fullText = "";
+  let completed = false;
+
+  const handleEvent = (event) => {
+    if (!event || typeof event !== "object") return;
+    if (event.type === "error") {
+      throw new Error(event.error || "Subscription provider returned an error.");
+    }
+    if (event.type === "delta" && typeof event.text === "string") {
+      fullText += event.text;
+      onUpdate(fullText, false);
+      return;
+    }
+    if (event.type === "done") {
+      if (typeof event.text === "string") {
+        fullText = event.text;
+      }
+      completed = true;
+      onUpdate(fullText, true);
+    }
+  };
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      handleEvent(JSON.parse(trimmed));
+    }
+  }
+  buffer += decoder.decode();
+  if (buffer.trim()) {
+    handleEvent(JSON.parse(buffer.trim()));
+  }
+  if (!completed) {
+    onUpdate(fullText, true);
+  }
+  return fullText;
+}
+
 async function translateText(text, overrides = {}) {
   const config = await chrome.storage.sync.get(DEFAULT_CONFIG);
   const targetLang = overrides.targetLang || config.targetLang;
   const sourceLang = overrides.sourceLang || config.sourceLang;
   if (isDirectTranslationProvider(config.provider)) {
     return translateDirect(text, config, targetLang, sourceLang);
+  }
+  if (usesSubscriptionAuth(config)) {
+    let translated = "";
+    await streamSubscriptionTranslation(text, config, targetLang, sourceLang, (value) => {
+      translated = value;
+    });
+    return translated;
   }
 
   const url = buildChatCompletionsUrl(config);
@@ -583,6 +729,16 @@ async function translateText(text, overrides = {}) {
 
 async function streamTranslate(text, onUpdate, overrides = {}) {
   const config = await chrome.storage.sync.get(DEFAULT_CONFIG);
+  if (usesSubscriptionAuth(config)) {
+    await streamSubscriptionTranslation(
+      text,
+      config,
+      overrides.targetLang || config.targetLang,
+      overrides.sourceLang || config.sourceLang,
+      onUpdate
+    );
+    return;
+  }
   if (isDirectTranslationProvider(config.provider) || config.provider === "yandexgpt") {
     const translated = await translateText(text, overrides);
     onUpdate(translated, true);
@@ -745,6 +901,24 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.action === "subscriptionStatus" && supportsSubscription(message.provider)) {
+    getSubscriptionStatus(message.provider)
+      .then((status) => sendResponse({ ok: true, ...status }))
+      .catch((err) => sendResponse({ ok: false, error: err.message || String(err) }));
+    return true;
+  }
+  if (message?.action === "subscriptionLogin" && supportsSubscription(message.provider)) {
+    startSubscriptionLogin(message.provider)
+      .then((result) => sendResponse({ ok: true, ...result }))
+      .catch((err) => sendResponse({ ok: false, error: err.message || String(err) }));
+    return true;
+  }
+  if (message?.action === "subscriptionLogout" && supportsSubscription(message.provider)) {
+    logoutSubscription(message.provider)
+      .then((result) => sendResponse({ ok: true, ...result }))
+      .catch((err) => sendResponse({ ok: false, error: err.message || String(err) }));
+    return true;
+  }
   if (message?.action === "translateText" && message.text) {
     translateText(message.text, {
       sourceLang: message.sourceLang,
