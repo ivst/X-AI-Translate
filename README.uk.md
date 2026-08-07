@@ -48,4 +48,10 @@ Chrome Web Store: https://chromewebstore.google.com/detail/ai-translate-for-x-an
 ## контакт
 - Електронна адреса: `xtran@msk.onl`
 
+## Поточний реліз (0.3.0)
+- У цьому релізі підтримуються лише BYOK/API-ключі; bridge підписок і native host не включені.
+- Google Translate є провайдером за замовчуванням і не потребує API-ключа. Для DeepL API Free потрібен API-ключ DeepL.
+- Автоматичний переклад видимих дописів X і коментарів YouTube є необов’язковим і вимкнений за замовчуванням.
+- Режим міркувань DeepSeek вимкнений за замовчуванням, щоб зменшити затримку.
+
 

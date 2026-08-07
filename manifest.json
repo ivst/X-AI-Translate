@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "default_locale": "en",
-  "name": "AI Translate for X and YouTube",
-  "version": "0.2.4",
+  "name": "AI Translate for X and YouTube (BYOK)",
+  "version": "0.3.0",
   "description": "__MSG_extDescription__",
   "permissions": ["contextMenus", "storage", "activeTab", "scripting", "notifications"],
   "host_permissions": [
@@ -16,8 +16,6 @@
     "https://translate.googleapis.com/*",
     "https://api-free.deepl.com/*",
     "https://api.deepl.com/*",
-    "http://127.0.0.1:32123/*",
-    "http://localhost:32123/*",
     "https://x.com/*",
     "https://twitter.com/*"
   ],

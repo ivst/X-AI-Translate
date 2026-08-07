@@ -48,4 +48,10 @@ Chrome Web Store: https://chromewebstore.google.com/detail/ai-translate-for-x-an
 ## 연락하다
 - 이메일: `xtran@msk.onl`
 
+## 현재 릴리스 (0.3.0)
+- 이 릴리스는 BYOK/API 키만 사용하며 구독 bridge와 native host는 포함하지 않습니다.
+- Google Translate가 기본 제공자이며 API 키가 필요 없습니다. DeepL API Free에는 DeepL API 키가 필요합니다.
+- X의 보이는 게시물과 YouTube 댓글 자동 번역은 선택 기능이며 기본적으로 꺼져 있습니다.
+- 번역 지연을 줄이기 위해 DeepSeek 사고 모드는 기본적으로 꺼져 있습니다.
+
 
