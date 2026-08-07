@@ -1,5 +1,5 @@
 {
   "extDescription": {
-    "message": "Traduit le texte sélectionné, les posts X et les commentaires YouTube avec API ou bridge d’abonnement OpenAI/Claude."
+    "message": "Traduit le texte sélectionné, les posts X et commentaires YouTube avec des clés API ou un bridge OpenAI/Claude facultatif."
   }
 }
