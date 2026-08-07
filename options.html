@@ -304,6 +304,13 @@
             <select id="model"></select>
             <input id="modelCustom" type="text" placeholder="Custom model id" data-i18n-placeholder="model_custom_placeholder" />
           </div>
+          <div id="deepseekControls" style="display:none;">
+            <div class="row" style="align-items:center;">
+              <input id="deepseekThinkingEnabled" type="checkbox" />
+              <label for="deepseekThinkingEnabled" data-i18n="deepseek_thinking" style="text-transform:none;letter-spacing:0;margin:0;">Enable DeepSeek thinking mode</label>
+            </div>
+            <div class="hint" data-i18n="deepseek_thinking_hint">Improves reasoning for complex tasks, but may make translations slower.</div>
+          </div>
           <div id="openrouterControls" style="display:none;">
             <label data-i18n="openrouter_models">OpenRouter models</label>
             <div class="row" style="align-items:center;">

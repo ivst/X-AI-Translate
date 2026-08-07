@@ -47,6 +47,7 @@ Chrome extension for translating selected text, X (Twitter) posts, and YouTube c
 - Provider presets and custom endpoint.
 - Direct translation providers: Google Translate (free web endpoint, no key) and DeepL API Free (free quota, API key required).
 - Model refresh/loading for OpenAI, Claude, Gemini, DeepSeek, OpenRouter (user/public, free-only), and YandexGPT.
+- DeepSeek thinking mode toggle (disabled by default to keep translations fast).
 - Output mode + overlay duration.
 - Quick selection button toggle.
 - Optional API key sync across devices with security warning.

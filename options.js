@@ -15,6 +15,7 @@
   syncApiKeys: false,
   openrouterFreeOnly: true,
   openrouterSource: "user",
+  deepseekThinkingEnabled: false,
   yandexFolderId: "",
   customApiUrl: "",
   customModel: ""
@@ -106,6 +107,8 @@ const openrouterSourceSelect = document.getElementById("openrouterSource");
 const refreshOpenrouterBtn = document.getElementById("refreshOpenrouter");
 const refreshYandexBtn = document.getElementById("refreshYandex");
 const uiLangSelect = document.getElementById("uiLang");
+const deepseekControls = document.getElementById("deepseekControls");
+const deepseekThinkingCheckbox = document.getElementById("deepseekThinkingEnabled");
 const yandexControls = document.getElementById("yandexControls");
 const yandexFolderInput = document.getElementById("yandexFolderId");
 const setupNoteIntro = document.getElementById("setupNoteIntro");
@@ -540,6 +543,7 @@ function setProviderControls(provider) {
   apiUrlControl.style.display = isGoogle ? "none" : "block";
   apiKeyControl.style.display = preset.requiresApiKey === false ? "none" : "block";
   modelControl.style.display = isDirect ? "none" : "block";
+  deepseekControls.style.display = provider === "deepseek" ? "block" : "none";
   providerHint.textContent = DIRECT_PROVIDER_HINT_I18N[provider]?.[uiLang]
     || DIRECT_PROVIDER_HINT_I18N[provider]?.en
     || "";
@@ -1078,6 +1082,10 @@ chrome.storage.sync.get(defaultConfig, (data) => {
       ? data.openrouterFreeOnly
       : defaultConfig.openrouterFreeOnly;
   openrouterSourceSelect.value = data.openrouterSource || defaultConfig.openrouterSource;
+  deepseekThinkingCheckbox.checked =
+    typeof data.deepseekThinkingEnabled === "boolean"
+      ? data.deepseekThinkingEnabled
+      : defaultConfig.deepseekThinkingEnabled;
   yandexFolderInput.value = data.yandexFolderId || defaultConfig.yandexFolderId;
   setOpenrouterControlsVisible(provider === "openrouter");
   setYandexControlsVisible(provider === "yandexgpt");
@@ -1457,6 +1465,7 @@ document.getElementById("save").addEventListener("click", () => {
     syncApiKeys,
     openrouterFreeOnly: openrouterFreeOnlyCheckbox.checked,
     openrouterSource: openrouterSourceSelect.value,
+    deepseekThinkingEnabled: deepseekThinkingCheckbox.checked,
     yandexFolderId: yandexFolderInput.value.trim()
   };
 
