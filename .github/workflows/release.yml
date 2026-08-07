@@ -108,6 +108,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.release.outputs.tag }}
+          VERSION: ${{ steps.release.outputs.version }}
           ARCHIVE: ${{ steps.release.outputs.archive }}
           CHECKSUM: ${{ steps.release.outputs.checksum }}
         shell: bash
@@ -119,6 +120,11 @@ jobs:
             --generate-notes \
             --target "$GITHUB_SHA" \
             --title "AI Translate $TAG"
+          notes_file="$(mktemp)"
+          trap 'rm -f "$notes_file"' EXIT
+          gh release view "$TAG" --json body --jq '.body' > "$notes_file"
+          printf '\n## Installation\n\nDownload `ai-translate-cws-v%s.zip`, unpack it, enable Developer mode at `chrome://extensions`, click **Load unpacked**, and select the unpacked folder.\n\nFor Chrome Web Store installation, use the published store listing.\n' "$VERSION" >> "$notes_file"
+          gh release edit "$TAG" --notes-file "$notes_file"
           release_url="$(gh release view "$TAG" --json url --jq '.url')"
           {
             echo "## Draft release prepared"
