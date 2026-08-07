@@ -20,7 +20,7 @@ const SUBSCRIPTION_PROVIDERS = new Set(["openai", "claude"]);
 const SUBSCRIPTION_BRIDGE_URL = "http://127.0.0.1:32123";
 
 function getSubscriptionBridgeStartHint() {
-  return "Open a terminal in the bridge folder and run: node server.mjs";
+  return "Download and install AI Translate Bridge from the subscription instructions.";
 }
 
 function supportsSubscription(provider) {
