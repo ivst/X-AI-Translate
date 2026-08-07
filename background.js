@@ -473,6 +473,56 @@ function buildTranslateRequestBody(config, text, targetLang, sourceLang, stream)
   return body;
 }
 
+function isTemperatureUnsupportedError(response, errorText) {
+  return response.status === 400
+    && /temperature/i.test(errorText)
+    && (/unsupported_value/i.test(errorText)
+      || /only the default/i.test(errorText)
+      || /does not support/i.test(errorText));
+}
+
+function removeTemperature(body) {
+  const fallbackBody = { ...body };
+  delete fallbackBody.temperature;
+  return fallbackBody;
+}
+
+async function requestTranslation(config, url, headers, body) {
+  const urls = [url];
+  if (
+    config.provider === "openrouter"
+    && /openrouter\.ai\/chat\/completions/i.test(url)
+  ) {
+    urls.push(`${normalizeApiBaseUrl("openrouter", "https://openrouter.ai/api/v1")}/chat/completions`);
+  }
+
+  let lastResponse = null;
+  for (const requestUrl of [...new Set(urls)]) {
+    let response = await fetch(requestUrl, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body)
+    });
+    lastResponse = response;
+
+    if (response.ok) return response;
+
+    const errorText = await response.clone().text();
+    if (Object.prototype.hasOwnProperty.call(body, "temperature")
+      && isTemperatureUnsupportedError(response, errorText)) {
+      response = await fetch(requestUrl, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(removeTemperature(body))
+      });
+      lastResponse = response;
+      if (response.ok) return response;
+    }
+  }
+
+  return lastResponse;
+}
+
 function extractClaudeText(data) {
   const blocks = Array.isArray(data?.content) ? data.content : [];
   return blocks
@@ -545,24 +595,12 @@ async function translateText(text, overrides = {}) {
   const authToken = await getAuthorizationToken(config);
   const body = buildTranslateRequestBody(config, text, targetLang, sourceLang, false);
 
-  let response = await fetch(url, {
-    method: "POST",
-    headers: buildProviderHeaders(config, authToken),
-    body: JSON.stringify(body)
-  });
-
-  if (
-    !response.ok &&
-    config.provider === "openrouter" &&
-    /openrouter\.ai\/chat\/completions/i.test(url)
-  ) {
-    const fallbackUrl = `${normalizeApiBaseUrl("openrouter", "https://openrouter.ai/api/v1")}/chat/completions`;
-    response = await fetch(fallbackUrl, {
-      method: "POST",
-      headers: buildProviderHeaders(config, authToken),
-      body: JSON.stringify(body)
-    });
-  }
+  const response = await requestTranslation(
+    config,
+    url,
+    buildProviderHeaders(config, authToken),
+    body
+  );
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -594,24 +632,12 @@ async function streamTranslate(text, onUpdate, overrides = {}) {
   const sourceLang = overrides.sourceLang || config.sourceLang;
   const body = buildTranslateRequestBody(config, text, targetLang, sourceLang, true);
 
-  let response = await fetch(url, {
-    method: "POST",
-    headers: buildProviderHeaders(config, authToken),
-    body: JSON.stringify(body)
-  });
-
-  if (
-    !response.ok &&
-    config.provider === "openrouter" &&
-    /openrouter\.ai\/chat\/completions/i.test(url)
-  ) {
-    const fallbackUrl = `${normalizeApiBaseUrl("openrouter", "https://openrouter.ai/api/v1")}/chat/completions`;
-    response = await fetch(fallbackUrl, {
-      method: "POST",
-      headers: buildProviderHeaders(config, authToken),
-      body: JSON.stringify(body)
-    });
-  }
+  const response = await requestTranslation(
+    config,
+    url,
+    buildProviderHeaders(config, authToken),
+    body
+  );
 
   if (!response.ok || !response.body) {
     const errorText = await response.text();
