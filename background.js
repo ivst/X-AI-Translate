@@ -19,6 +19,17 @@ const DEFAULT_CONFIG = {
 const SUBSCRIPTION_PROVIDERS = new Set(["openai", "claude"]);
 const SUBSCRIPTION_BRIDGE_URL = "http://127.0.0.1:32123";
 
+function getSubscriptionBridgeStartHint() {
+  const platform = `${navigator.platform || ""} ${navigator.userAgent || ""}`.toLowerCase();
+  if (platform.includes("win")) {
+    return "Install and start the background bridge with: powershell -ExecutionPolicy Bypass -File bridge/install-windows.ps1";
+  }
+  if (platform.includes("mac")) {
+    return "Install and start the background bridge with: bash bridge/install-macos.sh";
+  }
+  return "Start it with: node bridge/server.mjs";
+}
+
 function supportsSubscription(provider) {
   return SUBSCRIPTION_PROVIDERS.has(provider);
 }
@@ -46,7 +57,7 @@ async function requestSubscriptionBridge(path, body = {}) {
       body: JSON.stringify(body)
     });
   } catch (_) {
-    throw new Error("Subscription bridge is not running. Start it with: node bridge/server.mjs");
+    throw new Error(`Subscription bridge is not running. ${getSubscriptionBridgeStartHint()}`);
   }
   let data = {};
   try {
@@ -606,7 +617,7 @@ async function streamSubscriptionTranslation(text, config, targetLang, sourceLan
       })
     });
   } catch (_) {
-    throw new Error("Subscription bridge is not running. Start it with: node bridge/server.mjs");
+    throw new Error(`Subscription bridge is not running. ${getSubscriptionBridgeStartHint()}`);
   }
 
   if (!response.ok || !response.body) {

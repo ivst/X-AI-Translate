@@ -23,13 +23,33 @@ claude
 
 For Claude Pro/Max, choose the Claude account login. For OpenAI, complete the ChatGPT login in the browser. On Windows, Claude Code may require Git Bash or WSL according to its installation requirements.
 
-Start the bridge from the repository root:
+Start the bridge manually from the repository root:
 
 ```text
 node bridge/server.mjs
 ```
 
-Keep the bridge running while the extension uses subscription mode. Select OpenAI or Claude in the extension settings, choose `Subscription`, and click `Connect`.
+Keep the terminal open while the extension uses subscription mode. Select OpenAI or Claude in the extension settings, choose `Subscription`, and click `Connect`.
+
+## Background mode
+
+On Windows and macOS, the repository includes a per-user autostart script. It registers the bridge to start when the current user signs in, so no terminal window is needed during normal use.
+
+Run the command from the repository root once:
+
+Windows PowerShell:
+
+```text
+powershell -ExecutionPolicy Bypass -File bridge/install-windows.ps1
+```
+
+macOS:
+
+```text
+bash bridge/install-macos.sh
+```
+
+The bridge still listens only on `http://127.0.0.1:32123`. The background process runs as the current user so it can use the same Codex or Claude Code login. If the repository is moved, run the installer again. To remove autostart, run `powershell -ExecutionPolicy Bypass -File bridge/uninstall-windows.ps1` on Windows or `bash bridge/uninstall-macos.sh` on macOS.
 
 ## Optional command overrides
 

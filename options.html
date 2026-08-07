@@ -117,6 +117,28 @@
         color: var(--muted);
         margin-top: 6px;
       }
+      .auth-mode-options {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 28px;
+        margin-top: 8px;
+      }
+      .auth-mode-option {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin: 0;
+        color: var(--ink);
+        cursor: pointer;
+        letter-spacing: 0;
+        text-transform: none;
+      }
+      .auth-mode-option input[type="radio"] {
+        width: auto;
+        margin: 0;
+        padding: 0;
+      }
       .setup-note {
         grid-column: 1 / -1;
         font-size: 12px;
@@ -373,12 +395,12 @@
 
           <fieldset id="authModeControl" style="display:none;">
             <legend data-i18n="auth_mode">Connection</legend>
-            <div class="row" role="radiogroup" aria-label="Connection mode">
-              <label style="text-transform:none;letter-spacing:0;margin:0;">
+            <div class="auth-mode-options" role="radiogroup" aria-label="Connection mode">
+              <label class="auth-mode-option">
                 <input type="radio" name="authMode" value="apiKey" checked />
                 <span data-i18n="auth_mode_api_key">API key</span>
               </label>
-              <label style="text-transform:none;letter-spacing:0;margin:0;">
+              <label class="auth-mode-option">
                 <input type="radio" name="authMode" value="subscription" />
                 <span data-i18n="auth_mode_subscription">Subscription</span>
               </label>
@@ -567,7 +589,7 @@
             </li>
             <li>
               <span data-i18n="subscription_instructions_step_bridge">From the extension repository root, start the local bridge.</span>
-              <code>node bridge/server.mjs</code>
+              <code id="subscriptionInstructionsBridgeCommand"></code>
             </li>
             <li data-i18n="subscription_instructions_step_connect">Return here, select Subscription, and click Connect.</li>
           </ol>

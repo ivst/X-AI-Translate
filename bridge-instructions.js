@@ -23,11 +23,18 @@
   function render(lang, provider) {
     const strings = window.AITranslateI18n.getOptionsStrings(lang);
     const config = providerConfig[provider] || providerConfig.openai;
+    const platform = `${navigator.platform || ""} ${navigator.userAgent || ""}`.toLowerCase();
+    const bridgeCommand = platform.includes("win")
+      ? "powershell -ExecutionPolicy Bypass -File bridge/install-windows.ps1"
+      : platform.includes("mac")
+        ? "bash bridge/install-macos.sh"
+        : "node bridge/server.mjs";
     applyTranslations(strings, lang);
     document.getElementById("subscriptionInstructionsProvider").textContent =
       strings[config.providerKey] || strings.subscription_instructions_provider_openai;
     document.getElementById("subscriptionInstructionsInstallCommand").textContent = config.installCommand;
     document.getElementById("subscriptionInstructionsLoginCommand").textContent = config.loginCommand;
+    document.getElementById("subscriptionInstructionsBridgeCommand").textContent = bridgeCommand;
   }
 
   const params = new URLSearchParams(window.location.search);
