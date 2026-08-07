@@ -52,7 +52,7 @@ Vedi `PRIVACY_POLICY.md`.
 ## Licenza
 Questo progetto è distribuito con licenza MIT. Vedi [LICENSE](LICENSE).
 
-## Versione attuale (0.3.0)
+## Versione attuale (0.3.1)
 - Questa versione usa solo BYOK/chiavi API; bridge per gli abbonamenti e native host non sono inclusi.
 - Google Translate è il provider predefinito e non richiede una chiave API. DeepL API Free richiede una chiave API DeepL.
 - La traduzione automatica dei post visibili su X e dei commenti YouTube è opzionale e disattivata per impostazione predefinita.

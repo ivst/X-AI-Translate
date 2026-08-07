@@ -274,7 +274,9 @@ function ensureSelectionButton() {
       action: "translateStream",
       requestId,
       target: "overlay",
-      text
+      text,
+      sourceLang: currentConfig.sourceLang || "auto",
+      targetLang: currentConfig.targetLang || "en"
     }, (err) => {
       if (!err || activeSelectionRequestId !== requestId) return;
       clearSelectionStreamState();
@@ -686,7 +688,9 @@ function startInlineTranslation(el, btn, result, strings, options = {}) {
     action: "translateStream",
     requestId,
     target: "inline",
-    text: textToTranslate
+    text: textToTranslate,
+    sourceLang: currentConfig.sourceLang || "auto",
+    targetLang: currentConfig.targetLang || "en"
   }, (err) => {
     if (!err) return;
     const entry = inlineStreams.get(requestId);

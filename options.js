@@ -385,52 +385,85 @@ function applySetupNoteTranslations(lang) {
 function getKeyByProviderFromStore(provider, syncData, localData, useSyncKeys) {
   if (useSyncKeys) {
     const map = syncData.apiKeyByProvider || {};
-    return map[provider] || syncData.apiKey || "";
+    return map[provider] || "";
   }
   const map = localData.apiKeyByProvider || {};
-  return map[provider] || localData.apiKey || "";
+  return map[provider] || "";
 }
 
-function migrateLegacySyncedKeysToLocalIfNeeded(syncData, localData) {
-  if (syncData.syncApiKeys) return;
-  const localMap = localData.apiKeyByProvider || {};
-  const hasLocalKeys = Object.keys(localMap).length > 0 || Boolean(localData.apiKey);
-  if (hasLocalKeys) return;
-  const syncMap = syncData.apiKeyByProvider || {};
-  const hasSyncKeys = Object.keys(syncMap).length > 0 || Boolean(syncData.apiKey);
-  if (!hasSyncKeys) return;
-  const migrated = { ...syncMap };
-  const fallbackProvider = syncData.provider || defaultConfig.provider;
-  if (syncData.apiKey && !migrated[fallbackProvider]) {
-    migrated[fallbackProvider] = syncData.apiKey;
+function includeLegacyKey(keyMap, legacyKey, provider) {
+  const migrated = { ...(keyMap || {}) };
+  if (legacyKey && provider && Object.keys(migrated).length === 0) {
+    migrated[provider] = legacyKey;
   }
-  chrome.storage.local.set({ apiKeyByProvider: migrated, apiKey: syncData.apiKey || "" });
+  return migrated;
+}
+
+function migrateLegacyKeyData(syncData, localData) {
+  const provider = syncData.provider || defaultConfig.provider;
+  const rawSyncMap = { ...(syncData.apiKeyByProvider || {}) };
+  const rawLocalMap = { ...(localData.apiKeyByProvider || {}) };
+  const hasMappedKeys = Object.keys(rawSyncMap).length > 0 || Object.keys(rawLocalMap).length > 0;
+  const syncMap = hasMappedKeys
+    ? rawSyncMap
+    : includeLegacyKey(rawSyncMap, syncData.apiKey, provider);
+  const localMap = hasMappedKeys
+    ? rawLocalMap
+    : includeLegacyKey(rawLocalMap, localData.apiKey, provider);
+
+  if (syncData.syncApiKeys) {
+    const mergedSyncMap = { ...localMap, ...syncMap };
+    chrome.storage.sync.set({ apiKeyByProvider: mergedSyncMap, apiKey: "" });
+    chrome.storage.local.set({ apiKeyByProvider: {}, apiKey: "" });
+    return {
+      syncData: { ...syncData, apiKeyByProvider: mergedSyncMap, apiKey: "" },
+      localData: { ...localData, apiKeyByProvider: {}, apiKey: "" }
+    };
+  }
+
+  const mergedLocalMap = { ...syncMap, ...localMap };
+  chrome.storage.local.set({ apiKeyByProvider: mergedLocalMap, apiKey: "" });
+  chrome.storage.sync.set({ apiKeyByProvider: {}, apiKey: "" });
+  return {
+    syncData: { ...syncData, apiKeyByProvider: {}, apiKey: "" },
+    localData: { ...localData, apiKeyByProvider: mergedLocalMap, apiKey: "" }
+  };
 }
 
 function migrateKeyStorage(useSyncKeys, currentProvider, done) {
   chrome.storage.sync.get({ apiKeyByProvider: {}, apiKey: "" }, (syncData) => {
     chrome.storage.local.get({ apiKeyByProvider: {}, apiKey: "" }, (localData) => {
-      const syncMap = syncData.apiKeyByProvider || {};
-      const localMap = localData.apiKeyByProvider || {};
+      const syncMap = { ...(syncData.apiKeyByProvider || {}) };
+      const localMap = { ...(localData.apiKeyByProvider || {}) };
+      const hasMappedKeys = Object.keys(syncMap).length > 0 || Object.keys(localMap).length > 0;
+      const migratedSyncMap = hasMappedKeys
+        ? syncMap
+        : includeLegacyKey(syncMap, syncData.apiKey, currentProvider);
+      const migratedLocalMap = hasMappedKeys
+        ? localMap
+        : includeLegacyKey(localMap, localData.apiKey, currentProvider);
       if (useSyncKeys) {
-        const nextSyncMap = Object.keys(localMap).length ? localMap : syncMap;
-        const currentKey = nextSyncMap[currentProvider] || syncData.apiKey || localData.apiKey || "";
+        const nextSyncMap = { ...migratedLocalMap, ...migratedSyncMap };
         chrome.storage.sync.set(
           {
             syncApiKeys: true,
             apiKeyByProvider: nextSyncMap,
-            apiKey: currentKey
+            apiKey: ""
           },
-          () => done?.()
+          () => {
+            chrome.storage.local.set(
+              { apiKeyByProvider: {}, apiKey: "" },
+              () => done?.()
+            );
+          }
         );
         return;
       }
-      const nextLocalMap = Object.keys(localMap).length ? localMap : syncMap;
-      const currentKey = nextLocalMap[currentProvider] || localData.apiKey || syncData.apiKey || "";
+      const nextLocalMap = { ...migratedLocalMap, ...migratedSyncMap };
       chrome.storage.local.set(
         {
           apiKeyByProvider: nextLocalMap,
-          apiKey: currentKey
+          apiKey: ""
         },
         () => {
           chrome.storage.sync.set(
@@ -1121,8 +1154,13 @@ chrome.storage.sync.get(defaultConfig, (data) => {
   document.getElementById("extVersion").textContent =
     "v" + chrome.runtime.getManifest().version;
   chrome.storage.local.get({ apiKeyByProvider: {}, apiKey: "" }, (localData) => {
-    migrateLegacySyncedKeysToLocalIfNeeded(data, localData);
-    const key = getKeyByProviderFromStore(provider, data, localData, Boolean(data.syncApiKeys));
+    const migrated = migrateLegacyKeyData(data, localData);
+    const key = getKeyByProviderFromStore(
+      provider,
+      migrated.syncData,
+      migrated.localData,
+      Boolean(data.syncApiKeys)
+    );
     apiKeyInput.value = key;
     if (!key) return;
     if (provider === "openrouter") {
@@ -1508,7 +1546,7 @@ document.getElementById("save").addEventListener("click", () => {
         chrome.storage.sync.get({ apiKeyByProvider: {} }, (syncData) => {
           const keyMap = { ...(syncData.apiKeyByProvider || {}) };
           keyMap[provider] = currentKey;
-          chrome.storage.sync.set({ apiKeyByProvider: keyMap, apiKey: currentKey }, () => {
+          chrome.storage.sync.set({ apiKeyByProvider: keyMap, apiKey: "" }, () => {
             setStatus(getLocaleStrings(uiLangSelect.value).status_saved, false);
             refreshProviderModelsAfterSave(
               provider,
@@ -1524,7 +1562,7 @@ document.getElementById("save").addEventListener("click", () => {
         chrome.storage.local.get({ apiKeyByProvider: {} }, (localData) => {
           const keyMap = { ...(localData.apiKeyByProvider || {}) };
           keyMap[provider] = currentKey;
-          chrome.storage.local.set({ apiKeyByProvider: keyMap, apiKey: currentKey }, () => {
+          chrome.storage.local.set({ apiKeyByProvider: keyMap, apiKey: "" }, () => {
             chrome.storage.sync.set({ apiKeyByProvider: {}, apiKey: "" }, () => {
               setStatus(getLocaleStrings(uiLangSelect.value).status_saved, false);
               refreshProviderModelsAfterSave(

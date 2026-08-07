@@ -50,7 +50,7 @@ Bkz. `PRIVACY_POLICY.md`.
 ## Lisans
 Bu proje MIT Lisansı kapsamında dağıtılır. Bkz. [LICENSE](LICENSE).
 
-## Güncel sürüm (0.3.0)
+## Güncel sürüm (0.3.1)
 - Bu sürüm yalnızca BYOK/API anahtarlarını kullanır; abonelik bridge'i ve native host dahil değildir.
 - Google Translate varsayılan sağlayıcıdır ve API anahtarı gerektirmez. DeepL API Free için DeepL API anahtarı gerekir.
 - Görünen X gönderileri ve YouTube yorumlarının otomatik çevirisi isteğe bağlıdır ve varsayılan olarak kapalıdır.
