@@ -474,7 +474,15 @@ function buildTranslateRequestBody(config, text, targetLang, sourceLang, stream)
 }
 
 const REQUEST_PARAMETER_CACHE_KEY = "unsupportedRequestParameters";
-const CACHEABLE_REQUEST_PARAMETERS = new Set(["temperature"]);
+const CACHEABLE_REQUEST_PARAMETERS = new Set([
+  "temperature",
+  "top_p",
+  "response_format",
+  "max_tokens",
+  "max_completion_tokens",
+  "thinking",
+  "stream"
+]);
 
 function getRequestCapabilityKey(config, url, body) {
   const provider = String(config.provider || "").trim().toLowerCase();
@@ -490,7 +498,10 @@ async function getCachedUnsupportedParameters(capabilityKey) {
   try {
     const data = await chrome.storage.local.get({ [REQUEST_PARAMETER_CACHE_KEY]: {} });
     const parameters = data[REQUEST_PARAMETER_CACHE_KEY]?.[capabilityKey];
-    return new Set(Array.isArray(parameters) ? parameters : []);
+    return new Set(
+      (Array.isArray(parameters) ? parameters : [])
+        .filter((parameter) => CACHEABLE_REQUEST_PARAMETERS.has(parameter))
+    );
   } catch (error) {
     return new Set();
   }
@@ -518,6 +529,8 @@ async function cacheUnsupportedParameter(capabilityKey, parameter) {
 
 function getUnsupportedRequestParameter(response, errorText, body) {
   if (response.status !== 400) return "";
+  const compatibilityError = /unsupported|not supported|does not support|unrecognized|unknown parameter|only the default/i.test(errorText);
+  if (!compatibilityError) return "";
   const paramMatch = errorText.match(/"param"\s*:\s*"([^"]+)"/i);
   const parameter = paramMatch?.[1]?.trim() || "";
   if (
@@ -527,23 +540,47 @@ function getUnsupportedRequestParameter(response, errorText, body) {
   ) {
     return parameter;
   }
-  if (
-    CACHEABLE_REQUEST_PARAMETERS.has("temperature")
-    && Object.prototype.hasOwnProperty.call(body, "temperature")
-    && /temperature/i.test(errorText)
-    && (/unsupported_value/i.test(errorText)
-      || /only the default/i.test(errorText)
-      || /does not support/i.test(errorText))
-  ) {
-    return "temperature";
+  for (const candidate of CACHEABLE_REQUEST_PARAMETERS) {
+    if (
+      Object.prototype.hasOwnProperty.call(body, candidate)
+      && new RegExp(`\\b${candidate.replace("_", "[_-]")}\\b`, "i").test(errorText)
+    ) {
+      return candidate;
+    }
   }
   return "";
 }
 
-function removeUnsupportedParameters(body, parameters) {
+function applyParameterFallbacks(body, parameters) {
   const fallbackBody = { ...body };
+  const maxTokensUnsupported = parameters.has("max_tokens");
+  const maxCompletionTokensUnsupported = parameters.has("max_completion_tokens");
+
+  if (maxTokensUnsupported) {
+    delete fallbackBody.max_tokens;
+    if (
+      !maxCompletionTokensUnsupported
+      && !Object.prototype.hasOwnProperty.call(fallbackBody, "max_completion_tokens")
+      && Object.prototype.hasOwnProperty.call(body, "max_tokens")
+    ) {
+      fallbackBody.max_completion_tokens = body.max_tokens;
+    }
+  }
+  if (maxCompletionTokensUnsupported) {
+    delete fallbackBody.max_completion_tokens;
+    if (
+      !maxTokensUnsupported
+      && !Object.prototype.hasOwnProperty.call(fallbackBody, "max_tokens")
+      && Object.prototype.hasOwnProperty.call(body, "max_completion_tokens")
+    ) {
+      fallbackBody.max_tokens = body.max_completion_tokens;
+    }
+  }
+
   for (const parameter of parameters) {
-    delete fallbackBody[parameter];
+    if (parameter !== "max_tokens" && parameter !== "max_completion_tokens") {
+      delete fallbackBody[parameter];
+    }
   }
   return fallbackBody;
 }
@@ -551,7 +588,7 @@ function removeUnsupportedParameters(body, parameters) {
 async function requestTranslation(config, url, headers, body) {
   const capabilityKey = getRequestCapabilityKey(config, url, body);
   const unsupportedParameters = await getCachedUnsupportedParameters(capabilityKey);
-  let requestBody = removeUnsupportedParameters(body, unsupportedParameters);
+  let requestBody = applyParameterFallbacks(body, unsupportedParameters);
   const urls = [url];
   if (
     config.provider === "openrouter"
@@ -572,11 +609,11 @@ async function requestTranslation(config, url, headers, body) {
     if (response.ok) return response;
 
     const errorText = await response.clone().text();
-    const unsupportedParameter = getUnsupportedRequestParameter(response, errorText, body);
+    const unsupportedParameter = getUnsupportedRequestParameter(response, errorText, requestBody);
     if (unsupportedParameter && !unsupportedParameters.has(unsupportedParameter)) {
       unsupportedParameters.add(unsupportedParameter);
       await cacheUnsupportedParameter(capabilityKey, unsupportedParameter);
-      requestBody = removeUnsupportedParameters(body, unsupportedParameters);
+      requestBody = applyParameterFallbacks(body, unsupportedParameters);
       response = await fetch(requestUrl, {
         method: "POST",
         headers,
