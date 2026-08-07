@@ -14,6 +14,61 @@ const DEFAULT_CONFIG = {
   yandexFolderId: ""
 };
 
+const REQUEST_TIMEOUT_MS = 45000;
+const STREAM_IDLE_TIMEOUT_MS = 45000;
+const responseTimeouts = new WeakMap();
+
+async function fetchWithTimeout(input, init = {}) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(input, { ...init, signal: controller.signal });
+    responseTimeouts.set(response, timeoutId);
+    return response;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error?.name === "AbortError") {
+      throw new Error(`Request timed out after ${REQUEST_TIMEOUT_MS / 1000} seconds.`);
+    }
+    throw error;
+  }
+}
+
+function releaseResponseTimeout(response) {
+  const timeoutId = responseTimeouts.get(response);
+  if (timeoutId !== undefined) {
+    clearTimeout(timeoutId);
+    responseTimeouts.delete(response);
+  }
+}
+
+function normalizeRequestError(error) {
+  if (error?.name === "AbortError") {
+    return new Error(`Request timed out after ${REQUEST_TIMEOUT_MS / 1000} seconds.`);
+  }
+  return error;
+}
+
+async function readResponseText(response) {
+  try {
+    return await response.text();
+  } catch (error) {
+    throw normalizeRequestError(error);
+  } finally {
+    releaseResponseTimeout(response);
+  }
+}
+
+async function readResponseJson(response) {
+  try {
+    return await response.json();
+  } catch (error) {
+    throw normalizeRequestError(error);
+  } finally {
+    releaseResponseTimeout(response);
+  }
+}
+
 function isUnsupportedTabUrl(url) {
   if (!url) return false;
   const blockedPrefixes = [
@@ -76,7 +131,7 @@ function ensureContentScript(tabId) {
           return;
         }
         chrome.scripting.executeScript(
-          { target: { tabId }, files: ["content.js"] },
+          { target: { tabId }, files: ["i18n.js", "content.js"] },
           () => {
             if (chrome.runtime.lastError) {
               finish(false);
@@ -297,12 +352,12 @@ async function translateWithGoogle(text, targetLang, sourceLang, apiUrl) {
     url.searchParams.set("dt", "t");
     url.searchParams.set("q", chunk);
 
-    const response = await fetch(url.toString());
+    const response = await fetchWithTimeout(url.toString());
     if (!response.ok) {
-      const errorText = await response.text();
+      const errorText = await readResponseText(response);
       throw new Error(`Google Translate error ${response.status}: ${errorText}`);
     }
-    const data = await response.json();
+    const data = await readResponseJson(response);
     const translated = Array.isArray(data?.[0])
       ? data[0]
         .map((part) => (typeof part?.[0] === "string" ? part[0] : ""))
@@ -326,7 +381,7 @@ async function translateWithDeepL(text, targetLang, sourceLang, apiUrl, apiKey) 
   const source = getDeepLLanguageCode(sourceLang);
   if (source) body.source_lang = source;
 
-  const response = await fetch(endpoint, {
+  const response = await fetchWithTimeout(endpoint, {
     method: "POST",
     headers: {
       Authorization: `DeepL-Auth-Key ${apiKey}`,
@@ -335,10 +390,10 @@ async function translateWithDeepL(text, targetLang, sourceLang, apiUrl, apiKey) 
     body: JSON.stringify(body)
   });
   if (!response.ok) {
-    const errorText = await response.text();
+    const errorText = await readResponseText(response);
     throw new Error(`DeepL API error ${response.status}: ${errorText}`);
   }
-  const data = await response.json();
+  const data = await readResponseJson(response);
   const translated = data?.translations?.[0]?.text;
   if (typeof translated !== "string" || !translated.trim()) {
     throw new Error("DeepL returned an empty response.");
@@ -565,24 +620,30 @@ async function getCachedUnsupportedParameters(capabilityKey) {
   }
 }
 
+let requestParameterCacheWriteQueue = Promise.resolve();
+
 async function cacheUnsupportedParameter(capabilityKey, parameter) {
-  try {
-    const data = await chrome.storage.local.get({ [REQUEST_PARAMETER_CACHE_KEY]: {} });
-    const cache = data[REQUEST_PARAMETER_CACHE_KEY]
-      && typeof data[REQUEST_PARAMETER_CACHE_KEY] === "object"
-      ? data[REQUEST_PARAMETER_CACHE_KEY]
-      : {};
-    const parameters = new Set(Array.isArray(cache[capabilityKey]) ? cache[capabilityKey] : []);
-    parameters.add(parameter);
-    await chrome.storage.local.set({
-      [REQUEST_PARAMETER_CACHE_KEY]: {
-        ...cache,
-        [capabilityKey]: [...parameters]
-      }
-    });
-  } catch (error) {
-    // A storage failure must not prevent the compatible retry from working.
-  }
+  const write = requestParameterCacheWriteQueue.then(async () => {
+    try {
+      const data = await chrome.storage.local.get({ [REQUEST_PARAMETER_CACHE_KEY]: {} });
+      const cache = data[REQUEST_PARAMETER_CACHE_KEY]
+        && typeof data[REQUEST_PARAMETER_CACHE_KEY] === "object"
+        ? data[REQUEST_PARAMETER_CACHE_KEY]
+        : {};
+      const parameters = new Set(Array.isArray(cache[capabilityKey]) ? cache[capabilityKey] : []);
+      parameters.add(parameter);
+      await chrome.storage.local.set({
+        [REQUEST_PARAMETER_CACHE_KEY]: {
+          ...cache,
+          [capabilityKey]: [...parameters]
+        }
+      });
+    } catch (error) {
+      // A storage failure must not prevent the compatible retry from working.
+    }
+  });
+  requestParameterCacheWriteQueue = write.catch(() => {});
+  return write;
 }
 
 function getUnsupportedRequestParameter(response, errorText, body) {
@@ -646,7 +707,6 @@ function applyParameterFallbacks(body, parameters) {
 async function requestTranslation(config, url, headers, body) {
   const capabilityKey = getRequestCapabilityKey(config, url, body);
   const unsupportedParameters = await getCachedUnsupportedParameters(capabilityKey);
-  let requestBody = applyParameterFallbacks(body, unsupportedParameters);
   const urls = [url];
   if (
     config.provider === "openrouter"
@@ -655,34 +715,40 @@ async function requestTranslation(config, url, headers, body) {
     urls.push(`${normalizeApiBaseUrl("openrouter", "https://openrouter.ai/api/v1")}/chat/completions`);
   }
 
-  let lastResponse = null;
+  let lastStatus = 0;
+  let lastErrorText = "Request failed.";
   for (const requestUrl of [...new Set(urls)]) {
-    let response = await fetch(requestUrl, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(requestBody)
-    });
-    lastResponse = response;
-
-    if (response.ok) return response;
-
-    const errorText = await response.clone().text();
-    const unsupportedParameter = getUnsupportedRequestParameter(response, errorText, requestBody);
-    if (unsupportedParameter && !unsupportedParameters.has(unsupportedParameter)) {
-      unsupportedParameters.add(unsupportedParameter);
-      await cacheUnsupportedParameter(capabilityKey, unsupportedParameter);
-      requestBody = applyParameterFallbacks(body, unsupportedParameters);
-      response = await fetch(requestUrl, {
+    const attemptedParameters = new Set();
+    for (let attempt = 0; attempt <= CACHEABLE_REQUEST_PARAMETERS.size; attempt += 1) {
+      const requestBody = applyParameterFallbacks(body, unsupportedParameters);
+      const response = await fetchWithTimeout(requestUrl, {
         method: "POST",
         headers,
         body: JSON.stringify(requestBody)
       });
-      lastResponse = response;
       if (response.ok) return response;
+
+      lastStatus = response.status;
+      lastErrorText = await readResponseText(response);
+      const unsupportedParameter = getUnsupportedRequestParameter(
+        response,
+        lastErrorText,
+        requestBody
+      );
+      if (
+        !unsupportedParameter
+        || unsupportedParameters.has(unsupportedParameter)
+        || attemptedParameters.has(unsupportedParameter)
+      ) {
+        break;
+      }
+      attemptedParameters.add(unsupportedParameter);
+      unsupportedParameters.add(unsupportedParameter);
+      await cacheUnsupportedParameter(capabilityKey, unsupportedParameter);
     }
   }
 
-  return lastResponse;
+  throw new Error(`API error ${lastStatus || "unknown"}: ${lastErrorText}`);
 }
 
 function extractClaudeText(data) {
@@ -710,8 +776,6 @@ function extractTextFromOpenAICompatible(data) {
   const messageFallbacks = [
     message?.text,
     message?.output_text,
-    message?.reasoning_content,
-    message?.reasoning,
     message?.response_text
   ];
   for (const candidate of messageFallbacks) {
@@ -765,11 +829,11 @@ async function translateText(text, overrides = {}) {
   );
 
   if (!response.ok) {
-    const errorText = await response.text();
+    const errorText = await readResponseText(response);
     throw new Error(`API error ${response.status}: ${errorText}`);
   }
 
-  const data = await response.json();
+  const data = await readResponseJson(response);
   const content = config.provider === "claude"
     ? extractClaudeText(data)
     : extractTextFromOpenAICompatible(data);
@@ -802,13 +866,13 @@ async function streamTranslate(text, onUpdate, overrides = {}) {
   );
 
   if (!response.ok || !response.body) {
-    const errorText = await response.text();
+    const errorText = await readResponseText(response);
     throw new Error(`API error ${response.status}: ${errorText}`);
   }
 
   const contentType = (response.headers.get("content-type") || "").toLowerCase();
   if (!contentType.includes("text/event-stream")) {
-    const data = await response.json();
+    const data = await readResponseJson(response);
     const content = config.provider === "claude"
       ? extractClaudeText(data)
       : extractTextFromOpenAICompatible(data);
@@ -819,56 +883,135 @@ async function streamTranslate(text, onUpdate, overrides = {}) {
     return;
   }
 
+  releaseResponseTimeout(response);
   const reader = response.body.getReader();
   const decoder = new TextDecoder("utf-8");
   let buffer = "";
   let fullText = "";
   let currentEvent = "";
+  let eventData = [];
+  let completed = false;
+
+  const finish = () => {
+    if (completed) return true;
+    if (!fullText.trim()) {
+      throw new Error("Empty response from API. Provider returned no displayable text.");
+    }
+    completed = true;
+    onUpdate(fullText, true);
+    return true;
+  };
+
+  const getStreamError = (json) => {
+    const finishReason = json?.choices?.[0]?.finish_reason;
+    const isError = currentEvent === "error"
+      || json?.type === "error"
+      || Boolean(json?.error)
+      || finishReason === "error";
+    if (!isError) return "";
+    return json?.error?.message
+      || json?.error?.type
+      || json?.message
+      || (typeof json?.error === "string" ? json.error : "")
+      || "The provider terminated the response stream with an error.";
+  };
+
+  const dispatchEvent = () => {
+    if (eventData.length === 0) {
+      currentEvent = "";
+      return false;
+    }
+    const data = eventData.join("\n");
+    eventData = [];
+    if (data === "[DONE]") {
+      currentEvent = "";
+      return finish();
+    }
+
+    let json;
+    try {
+      json = JSON.parse(data);
+    } catch (error) {
+      currentEvent = "";
+      return false;
+    }
+
+    const streamError = getStreamError(json);
+    if (streamError) {
+      throw new Error(`API stream error: ${streamError}`);
+    }
+
+    if (config.provider === "claude") {
+      const delta = json?.delta?.text ?? "";
+      if ((json?.type === "content_block_delta" || currentEvent === "content_block_delta") && delta) {
+        fullText += delta;
+        onUpdate(fullText, false);
+      }
+      if (json?.type === "message_stop" || currentEvent === "message_stop") {
+        currentEvent = "";
+        return finish();
+      }
+    } else {
+      const delta = extractDeltaFromOpenAIChunk(json);
+      if (delta) {
+        fullText += delta;
+        onUpdate(fullText, false);
+      }
+    }
+    currentEvent = "";
+    return false;
+  };
+
+  const processLine = (line) => {
+    const trimmed = line.trim();
+    if (!trimmed) return dispatchEvent();
+    if (trimmed.startsWith("event:")) {
+      currentEvent = trimmed.replace(/^event:\s*/, "");
+      return false;
+    }
+    if (trimmed.startsWith("data:")) {
+      eventData.push(trimmed.replace(/^data:\s*/, ""));
+    }
+    return false;
+  };
+
+  const readChunk = async () => {
+    let timeoutId;
+    try {
+      return await Promise.race([
+        reader.read(),
+        new Promise((_, reject) => {
+          timeoutId = setTimeout(() => {
+            reject(new Error(`Response stream timed out after ${STREAM_IDLE_TIMEOUT_MS / 1000} seconds of inactivity.`));
+          }, STREAM_IDLE_TIMEOUT_MS);
+        })
+      ]);
+    } catch (error) {
+      try {
+        await reader.cancel(error?.message);
+      } catch (_) {
+        // Ignore cancellation failures and report the original stream error.
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  };
 
   while (true) {
-    const { value, done } = await reader.read();
+    const { value, done } = await readChunk();
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
     const lines = buffer.split("\n");
     buffer = lines.pop() || "";
     for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-      if (trimmed.startsWith("event:")) {
-        currentEvent = trimmed.replace(/^event:\s*/, "");
-        continue;
-      }
-      if (!trimmed.startsWith("data:")) continue;
-      const data = trimmed.replace(/^data:\s*/, "");
-      if (data === "[DONE]") {
-        onUpdate(fullText, true);
-        return;
-      }
-      try {
-        const json = JSON.parse(data);
-        if (config.provider === "claude") {
-          const delta = json?.delta?.text ?? "";
-          if ((json?.type === "content_block_delta" || currentEvent === "content_block_delta") && delta) {
-            fullText += delta;
-            onUpdate(fullText, false);
-          }
-          if (json?.type === "message_stop" || currentEvent === "message_stop") {
-            onUpdate(fullText, true);
-            return;
-          }
-        } else {
-          const delta = extractDeltaFromOpenAIChunk(json);
-          if (delta) {
-            fullText += delta;
-            onUpdate(fullText, false);
-          }
-        }
-      } catch (err) {
-        // Ignore malformed chunks
-      }
+      if (processLine(line)) return;
     }
   }
-  onUpdate(fullText, true);
+  buffer += decoder.decode();
+  if (buffer && processLine(buffer)) return;
+  if (dispatchEvent()) return;
+  finish();
 }
 
 function saveLastTranslation(text, isError) {
