@@ -48,6 +48,9 @@ Siehe `PRIVACY_POLICY.md`.
 ## Kontakt
 - E-Mail: `xtran@msk.onl`
 
+## Lizenz
+Dieses Projekt steht unter der MIT-Lizenz. Siehe [LICENSE](LICENSE).
+
 ## Aktuelle Version (0.3.0)
 - Diese Version verwendet ausschließlich BYOK/API-Schlüssel; Subscription-Bridge und Native Host sind nicht enthalten.
 - Google Translate ist der Standardanbieter und benötigt keinen API-Schlüssel. DeepL API Free benötigt einen DeepL-API-Schlüssel.

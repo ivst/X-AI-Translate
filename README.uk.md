@@ -48,6 +48,9 @@ Chrome Web Store: https://chromewebstore.google.com/detail/ai-translate-for-x-an
 ## контакт
 - Електронна адреса: `xtran@msk.onl`
 
+## Ліцензія
+Проєкт поширюється за ліцензією MIT. Див. файл [LICENSE](LICENSE).
+
 ## Поточний реліз (0.3.0)
 - У цьому релізі підтримуються лише BYOK/API-ключі; bridge підписок і native host не включені.
 - Google Translate є провайдером за замовчуванням і не потребує API-ключа. Для DeepL API Free потрібен API-ключ DeepL.
