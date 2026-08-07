@@ -172,6 +172,13 @@
       .subscription-help-row button:hover {
         background: #eef8ff;
       }
+      .subscription-docs-link {
+        margin-top: 10px;
+        font-size: 12px;
+      }
+      .subscription-docs-link a {
+        color: var(--accent-dark);
+      }
       dialog.subscription-dialog {
         width: min(560px, calc(100vw - 32px));
         border: 0;
@@ -588,13 +595,16 @@
               <code id="subscriptionInstructionsLoginCommand"></code>
             </li>
             <li>
-              <span data-i18n="subscription_instructions_step_bridge">From the extension repository root, start the local bridge.</span>
-              <code id="subscriptionInstructionsBridgeCommand"></code>
+              <span data-i18n="subscription_instructions_step_bridge">Open a terminal in the downloaded bridge folder and run the command below.</span>
+              <code>node server.mjs</code>
             </li>
             <li data-i18n="subscription_instructions_step_connect">Return here, select Subscription, and click Connect.</li>
           </ol>
           <div class="setup-note" data-i18n="subscription_instructions_note">
-            Keep the bridge terminal running while using subscription mode. API-key mode remains available at any time.
+            The extension does not run shell commands. Keep the bridge terminal open while using subscription mode. API-key mode remains available at any time.
+          </div>
+          <div class="subscription-docs-link">
+            <a href="https://github.com/ivst/X-AI-Translate/blob/master/bridge/README.md" target="_blank" rel="noopener noreferrer" data-i18n="subscription_instructions_docs">Open bridge documentation</a>
           </div>
           <div class="row dialog-actions">
             <button id="subscriptionInstructionsOpenTab" class="secondary" type="button" data-i18n="subscription_instructions_open_tab">Open full instructions</button>

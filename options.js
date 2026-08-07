@@ -142,7 +142,6 @@ const subscriptionInstructionsDialog = document.getElementById("subscriptionInst
 const subscriptionInstructionsProvider = document.getElementById("subscriptionInstructionsProvider");
 const subscriptionInstructionsInstallCommand = document.getElementById("subscriptionInstructionsInstallCommand");
 const subscriptionInstructionsLoginCommand = document.getElementById("subscriptionInstructionsLoginCommand");
-const subscriptionInstructionsBridgeCommand = document.getElementById("subscriptionInstructionsBridgeCommand");
 const subscriptionInstructionsOpenTabButton = document.getElementById("subscriptionInstructionsOpenTab");
 const subscriptionInstructionsCloseButton = document.getElementById("subscriptionInstructionsClose");
 const subscriptionInstructionsCloseIcon = document.getElementById("subscriptionInstructionsCloseIcon");
@@ -491,17 +490,6 @@ function getSubscriptionInstructionConfig(provider) {
   return SUBSCRIPTION_INSTRUCTION_CONFIG[provider] || SUBSCRIPTION_INSTRUCTION_CONFIG.openai;
 }
 
-function getBridgeSetupCommand() {
-  const platform = `${navigator.platform || ""} ${navigator.userAgent || ""}`.toLowerCase();
-  if (platform.includes("win")) {
-    return "powershell -ExecutionPolicy Bypass -File bridge/install-windows.ps1";
-  }
-  if (platform.includes("mac")) {
-    return "bash bridge/install-macos.sh";
-  }
-  return "node bridge/server.mjs";
-}
-
 function getSubscriptionInstructionsUrl(provider) {
   const lang = encodeURIComponent(uiLangSelect?.value || "en");
   const selectedProvider = encodeURIComponent(
@@ -522,9 +510,6 @@ function applySubscriptionInstructionContent(lang, provider) {
   }
   if (subscriptionInstructionsLoginCommand) {
     subscriptionInstructionsLoginCommand.textContent = config.loginCommand;
-  }
-  if (subscriptionInstructionsBridgeCommand) {
-    subscriptionInstructionsBridgeCommand.textContent = getBridgeSetupCommand();
   }
 }
 

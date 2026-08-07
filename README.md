@@ -57,7 +57,7 @@ Chrome extension for translating selected text, X (Twitter) posts, and YouTube c
 
 ## Subscription mode
 
-Subscription mode is opt-in and requires the local bridge plus the authenticated provider CLI. Follow [`bridge/README.md`](bridge/README.md) before selecting Subscription in Settings. Gemini and all other providers continue to use their existing API-key flow.
+Subscription mode is opt-in and requires the separately downloaded local bridge plus the authenticated provider CLI. Open the bridge documentation, run `node server.mjs` from the bridge folder, and keep that terminal open while using Subscription. Gemini and all other providers continue to use their existing API-key flow.
 
 ## Permissions
 - The content script runs on `<all_urls>` to detect text selections and render inline translation UI where supported.
@@ -67,9 +67,10 @@ Subscription mode is opt-in and requires the local bridge plus the authenticated
 ## Development
 - Load unpacked in `chrome://extensions`
 - Entry files: `background.js`, `content.js`, `popup.html`, `popup.js`, `options.html`, `options.js`
+- Build the Chrome Web Store archive with `node package-extension.mjs`. The generated package excludes the local bridge and its native setup files; do not upload the repository root directly.
 
 ## Privacy
-Selected text is sent only to the API endpoint you configure.
+Selected text is sent only to the API endpoint you configure, or to the local bridge when optional subscription mode is enabled.
 See `PRIVACY_POLICY.md`.
 
 ## Contact
