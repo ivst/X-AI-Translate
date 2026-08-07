@@ -188,6 +188,20 @@ migratedDeepSeek = await call("migrateLegacyDeepSeekConfig", {
   deepseekThinkingEnabled: true
 });
 check(migratedDeepSeek.deepseekThinkingEnabled, false, "Chat migration disables thinking");
+
+const originalSyncSet = chrome.storage.sync.set;
+chrome.storage.sync.set = () => Promise.reject(new Error("Sync quota exceeded"));
+try {
+  migratedDeepSeek = await call("migrateLegacyDeepSeekConfig", {
+    provider: "deepseek",
+    model: "deepseek-reasoner",
+    deepseekThinkingEnabled: false
+  });
+  check(migratedDeepSeek.model, "deepseek-v4-flash", "Storage failure keeps the migrated model in memory");
+  check(migratedDeepSeek.deepseekThinkingEnabled, true, "Storage failure keeps reasoner thinking enabled");
+} finally {
+  chrome.storage.sync.set = originalSyncSet;
+}
 assert.throws(
   () => call("resolveModelForProvider", { provider: "yandexgpt", model: "text-embedding", yandexFolderId: "id" }),
   /Embedding models are not supported/

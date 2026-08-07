@@ -499,10 +499,14 @@ async function migrateLegacyDeepSeekConfig(config) {
     model: migration.model,
     deepseekThinkingEnabled: migration.thinkingEnabled
   };
-  await chrome.storage.sync.set({
-    model: migrated.model,
-    deepseekThinkingEnabled: migrated.deepseekThinkingEnabled
-  });
+  try {
+    await chrome.storage.sync.set({
+      model: migrated.model,
+      deepseekThinkingEnabled: migrated.deepseekThinkingEnabled
+    });
+  } catch (_) {
+    // Persisting the migration is best-effort and must not block translation.
+  }
   return migrated;
 }
 
