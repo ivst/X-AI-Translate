@@ -28,7 +28,8 @@ Chrome extension for translating selected text, X (Twitter) posts, and YouTube c
 - Inline translate button under X posts/replies and YouTube comments (streaming output).
 - Optional quick-translate button near text selection.
 - Popup quick translation block with language pair switch, saved last input/output, and saved language pair.
-- Supports OpenAI, Claude, Gemini, DeepSeek, YandexGPT, OpenRouter, and custom OpenAI-compatible endpoints.
+- Supports OpenAI, Claude, Gemini, DeepSeek, YandexGPT, OpenRouter, Google Translate, DeepL API Free, and custom OpenAI-compatible endpoints.
+- Google Translate works without an API key through its free web endpoint; DeepL uses the official DeepL API Free plan.
 - OpenRouter model list with Free-only filter and cache.
 - Auto-loading model lists for OpenAI, Claude, Gemini, DeepSeek, OpenRouter, and YandexGPT.
 - Output modes: bottom-right toast or centered modal (no extension-popup output).
@@ -38,12 +39,13 @@ Chrome extension for translating selected text, X (Twitter) posts, and YouTube c
 
 ## Usage
 1. Open the popup → click **Settings** (options page).
-2. Configure API base URL, key, model, languages, and output mode.
+2. Choose a provider. Google Translate needs no key; DeepL API Free needs a DeepL API key. Configure the remaining fields, languages, and output mode.
 3. On any page, select text and use the context menu or hotkey.
 4. On X and YouTube comments, click "Translate text" under supported content blocks to see inline translation. You can disable these buttons in Settings.
 
 ## Settings (Options page)
 - Provider presets and custom endpoint.
+- Direct translation providers: Google Translate (free web endpoint, no key) and DeepL API Free (free quota, API key required).
 - Model refresh/loading for OpenAI, Claude, Gemini, DeepSeek, OpenRouter (user/public, free-only), and YandexGPT.
 - Output mode + overlay duration.
 - Quick selection button toggle.

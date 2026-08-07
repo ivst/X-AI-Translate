@@ -215,6 +215,114 @@ function buildPrompt(text, targetLang, sourceLang) {
   ].join("\n");
 }
 
+const DIRECT_TRANSLATION_PROVIDERS = new Set(["googletranslate", "deepl"]);
+
+function isDirectTranslationProvider(provider) {
+  return DIRECT_TRANSLATION_PROVIDERS.has(provider);
+}
+
+function getGoogleLanguageCode(language) {
+  const code = (language || "auto").trim().toLowerCase();
+  const aliases = {
+    auto: "auto",
+    he: "iw",
+    zh: "zh-CN"
+  };
+  return aliases[code] || code;
+}
+
+function getDeepLLanguageCode(language) {
+  const code = (language || "").trim().toUpperCase();
+  if (!code || code === "AUTO") return "";
+  return code;
+}
+
+function splitGoogleText(text, maxLength = 4500) {
+  const chunks = [];
+  let remaining = String(text || "");
+  while (remaining.length > maxLength) {
+    let splitAt = Math.max(
+      remaining.lastIndexOf("\n", maxLength),
+      remaining.lastIndexOf(" ", maxLength)
+    );
+    if (splitAt < Math.floor(maxLength * 0.5)) {
+      splitAt = maxLength;
+    }
+    chunks.push(remaining.slice(0, splitAt));
+    remaining = remaining.slice(splitAt);
+  }
+  if (remaining) chunks.push(remaining);
+  return chunks;
+}
+
+async function translateWithGoogle(text, targetLang, sourceLang, apiUrl) {
+  const chunks = splitGoogleText(text);
+  const translatedChunks = [];
+  for (const chunk of chunks) {
+    const url = new URL(`${normalizeApiBaseUrl("googletranslate", apiUrl)}/translate_a/single`);
+    url.searchParams.set("client", "gtx");
+    url.searchParams.set("sl", getGoogleLanguageCode(sourceLang));
+    url.searchParams.set("tl", getGoogleLanguageCode(targetLang));
+    url.searchParams.set("dt", "t");
+    url.searchParams.set("q", chunk);
+
+    const response = await fetch(url.toString());
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Google Translate error ${response.status}: ${errorText}`);
+    }
+    const data = await response.json();
+    const translated = Array.isArray(data?.[0])
+      ? data[0]
+        .map((part) => (typeof part?.[0] === "string" ? part[0] : ""))
+        .join("")
+      : "";
+    if (!translated) {
+      throw new Error("Google Translate returned an empty response.");
+    }
+    translatedChunks.push(translated);
+  }
+  return translatedChunks.join("").trim();
+}
+
+async function translateWithDeepL(text, targetLang, sourceLang, apiUrl, apiKey) {
+  const base = normalizeApiBaseUrl("deepl", apiUrl);
+  const endpoint = /\/v2$/i.test(base) ? `${base}/translate` : `${base}/v2/translate`;
+  const body = {
+    text: [text],
+    target_lang: getDeepLLanguageCode(targetLang)
+  };
+  const source = getDeepLLanguageCode(sourceLang);
+  if (source) body.source_lang = source;
+
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      Authorization: `DeepL-Auth-Key ${apiKey}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(body)
+  });
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`DeepL API error ${response.status}: ${errorText}`);
+  }
+  const data = await response.json();
+  const translated = data?.translations?.[0]?.text;
+  if (typeof translated !== "string" || !translated.trim()) {
+    throw new Error("DeepL returned an empty response.");
+  }
+  return translated.trim();
+}
+
+async function translateDirect(text, config, targetLang, sourceLang) {
+  if (config.provider === "googletranslate") {
+    return translateWithGoogle(text, targetLang, sourceLang, config.apiUrl);
+  }
+  const authToken = await getAuthorizationToken(config);
+  return translateWithDeepL(text, targetLang, sourceLang, config.apiUrl, authToken);
+}
+
 function normalizeApiBaseUrl(provider, apiUrl) {
   const raw = (apiUrl || "").trim();
   if (!raw) return raw;
@@ -309,6 +417,9 @@ function resolveModelForProvider(config) {
 }
 
 async function getAuthorizationToken(config) {
+  if (config.provider === "googletranslate") {
+    return "";
+  }
   const provider = config.provider;
   const syncMap = config.apiKeyByProvider || {};
   if (config.syncApiKeys) {
@@ -426,10 +537,14 @@ function extractDeltaFromOpenAIChunk(json) {
 
 async function translateText(text, overrides = {}) {
   const config = await chrome.storage.sync.get(DEFAULT_CONFIG);
-  const url = buildChatCompletionsUrl(config);
-  const authToken = await getAuthorizationToken(config);
   const targetLang = overrides.targetLang || config.targetLang;
   const sourceLang = overrides.sourceLang || config.sourceLang;
+  if (isDirectTranslationProvider(config.provider)) {
+    return translateDirect(text, config, targetLang, sourceLang);
+  }
+
+  const url = buildChatCompletionsUrl(config);
+  const authToken = await getAuthorizationToken(config);
   const body = buildTranslateRequestBody(config, text, targetLang, sourceLang, false);
 
   let response = await fetch(url, {
@@ -470,7 +585,7 @@ async function translateText(text, overrides = {}) {
 
 async function streamTranslate(text, onUpdate, overrides = {}) {
   const config = await chrome.storage.sync.get(DEFAULT_CONFIG);
-  if (config.provider === "yandexgpt") {
+  if (isDirectTranslationProvider(config.provider) || config.provider === "yandexgpt") {
     const translated = await translateText(text, overrides);
     onUpdate(translated, true);
     return;
