@@ -7,7 +7,6 @@ const EXTENSION_FILES = [
   "background.js",
   "content.js",
   "i18n.js",
-  "icon.png",
   "icon128.png",
   "icon16.png",
   "icon48.png",
@@ -55,13 +54,12 @@ function localHeader(name, data, checksum) {
   header.writeUInt16LE(0, 6);
   header.writeUInt16LE(0, 8);
   header.writeUInt16LE(0, 10);
-  header.writeUInt16LE(0, 12);
-  header.writeUInt16LE(0x21, 14);
-  header.writeUInt32LE(checksum, 18);
+  header.writeUInt16LE(0x21, 12);
+  header.writeUInt32LE(checksum, 14);
+  header.writeUInt32LE(data.length, 18);
   header.writeUInt32LE(data.length, 22);
-  header.writeUInt32LE(data.length, 26);
-  header.writeUInt16LE(nameBuffer.length, 28);
-  header.writeUInt16LE(0, 30);
+  header.writeUInt16LE(nameBuffer.length, 26);
+  header.writeUInt16LE(0, 28);
   nameBuffer.copy(header, 30);
   data.copy(header, 30 + nameBuffer.length);
   return header;
