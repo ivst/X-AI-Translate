@@ -137,6 +137,14 @@ const subscriptionStatus = document.getElementById("subscriptionStatus");
 const subscriptionHint = document.getElementById("subscriptionHint");
 const subscriptionConnectButton = document.getElementById("subscriptionConnect");
 const subscriptionDisconnectButton = document.getElementById("subscriptionDisconnect");
+const subscriptionHelpButton = document.getElementById("subscriptionHelp");
+const subscriptionInstructionsDialog = document.getElementById("subscriptionInstructionsDialog");
+const subscriptionInstructionsProvider = document.getElementById("subscriptionInstructionsProvider");
+const subscriptionInstructionsInstallCommand = document.getElementById("subscriptionInstructionsInstallCommand");
+const subscriptionInstructionsLoginCommand = document.getElementById("subscriptionInstructionsLoginCommand");
+const subscriptionInstructionsOpenTabButton = document.getElementById("subscriptionInstructionsOpenTab");
+const subscriptionInstructionsCloseButton = document.getElementById("subscriptionInstructionsClose");
+const subscriptionInstructionsCloseIcon = document.getElementById("subscriptionInstructionsCloseIcon");
 
 let savedCustomApiUrl = "";
 let savedCustomModel = "";
@@ -465,6 +473,63 @@ function getLocaleStrings(lang) {
   return window.AITranslateI18n.getOptionsStrings(lang);
 }
 
+const SUBSCRIPTION_INSTRUCTION_CONFIG = {
+  openai: {
+    providerKey: "subscription_instructions_provider_openai",
+    installCommand: "npm install -g @openai/codex",
+    loginCommand: "codex login"
+  },
+  claude: {
+    providerKey: "subscription_instructions_provider_claude",
+    installCommand: "npm install -g @anthropic-ai/claude-code",
+    loginCommand: "claude"
+  }
+};
+
+function getSubscriptionInstructionConfig(provider) {
+  return SUBSCRIPTION_INSTRUCTION_CONFIG[provider] || SUBSCRIPTION_INSTRUCTION_CONFIG.openai;
+}
+
+function getSubscriptionInstructionsUrl(provider) {
+  const lang = encodeURIComponent(uiLangSelect?.value || "en");
+  const selectedProvider = encodeURIComponent(
+    SUBSCRIPTION_INSTRUCTION_CONFIG[provider] ? provider : "openai"
+  );
+  return `${chrome.runtime.getURL("bridge-instructions.html")}?provider=${selectedProvider}&lang=${lang}`;
+}
+
+function applySubscriptionInstructionContent(lang, provider) {
+  if (!subscriptionInstructionsDialog) return;
+  const strings = getLocaleStrings(lang || "en");
+  const config = getSubscriptionInstructionConfig(provider);
+  if (subscriptionInstructionsProvider) {
+    subscriptionInstructionsProvider.textContent = strings[config.providerKey] || strings.subscription_instructions_provider_openai;
+  }
+  if (subscriptionInstructionsInstallCommand) {
+    subscriptionInstructionsInstallCommand.textContent = config.installCommand;
+  }
+  if (subscriptionInstructionsLoginCommand) {
+    subscriptionInstructionsLoginCommand.textContent = config.loginCommand;
+  }
+}
+
+function openSubscriptionInstructionsTab() {
+  window.open(getSubscriptionInstructionsUrl(providerSelect.value), "_blank", "noopener,noreferrer");
+}
+
+function openSubscriptionInstructionsDialog() {
+  applySubscriptionInstructionContent(uiLangSelect.value, providerSelect.value);
+  if (typeof subscriptionInstructionsDialog?.showModal === "function") {
+    subscriptionInstructionsDialog.showModal();
+  }
+}
+
+function closeSubscriptionInstructionsDialog() {
+  if (typeof subscriptionInstructionsDialog?.close === "function" && subscriptionInstructionsDialog.open) {
+    subscriptionInstructionsDialog.close();
+  }
+}
+
 function applyTranslations(lang) {
   document.documentElement.lang = lang || "en";
   const strings = getLocaleStrings(lang);
@@ -480,6 +545,7 @@ function applyTranslations(lang) {
       el.setAttribute("placeholder", strings[key]);
     }
   });
+  applySubscriptionInstructionContent(lang, providerSelect?.value);
 }
 
 function applySetupNoteTranslations(lang) {
@@ -1467,6 +1533,16 @@ subscriptionDisconnectButton.addEventListener("click", async () => {
     setSubscriptionStatus(strings.subscription_status_not_connected || "Not connected", false, false);
   } catch (err) {
     setSubscriptionStatus(err.message || "Subscription logout failed.", true, false);
+  }
+});
+
+subscriptionHelpButton.addEventListener("click", openSubscriptionInstructionsDialog);
+subscriptionInstructionsOpenTabButton.addEventListener("click", openSubscriptionInstructionsTab);
+subscriptionInstructionsCloseButton.addEventListener("click", closeSubscriptionInstructionsDialog);
+subscriptionInstructionsCloseIcon.addEventListener("click", closeSubscriptionInstructionsDialog);
+subscriptionInstructionsDialog.addEventListener("click", (event) => {
+  if (event.target === subscriptionInstructionsDialog) {
+    closeSubscriptionInstructionsDialog();
   }
 });
 

@@ -135,6 +135,97 @@
         margin-top: 6px;
         color: #8b4d1f;
       }
+      .subscription-help-row {
+        margin-top: 8px;
+      }
+      .subscription-help-row button {
+        margin-top: 0;
+        padding: 7px 10px;
+        font-size: 12px;
+        background: transparent;
+        color: var(--accent-dark);
+        border: 1px solid #b9d8ee;
+        box-shadow: none;
+      }
+      .subscription-help-row button:hover {
+        background: #eef8ff;
+      }
+      dialog.subscription-dialog {
+        width: min(560px, calc(100vw - 32px));
+        border: 0;
+        border-radius: 16px;
+        padding: 0;
+        color: var(--ink);
+        box-shadow: 0 24px 70px rgba(0, 0, 0, 0.25);
+      }
+      dialog.subscription-dialog::backdrop {
+        background: rgba(28, 27, 25, 0.35);
+      }
+      .subscription-dialog-body {
+        padding: 20px;
+      }
+      .subscription-dialog-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .subscription-dialog h2 {
+        margin: 0;
+        font-size: 19px;
+      }
+      .subscription-dialog p,
+      .subscription-dialog li {
+        font-size: 13px;
+        line-height: 1.5;
+      }
+      .subscription-dialog ol {
+        padding-left: 22px;
+        margin: 16px 0;
+      }
+      .subscription-dialog li + li {
+        margin-top: 12px;
+      }
+      .subscription-dialog code {
+        display: block;
+        overflow-x: auto;
+        margin-top: 6px;
+        padding: 8px 10px;
+        border-radius: 8px;
+        background: #f3f0e9;
+        font-size: 12px;
+        white-space: pre-wrap;
+      }
+      .subscription-dialog .dialog-actions {
+        justify-content: flex-end;
+        flex-wrap: wrap;
+        margin-top: 14px;
+      }
+      .subscription-dialog .dialog-actions button {
+        margin-top: 0;
+      }
+      .subscription-dialog .dialog-actions .secondary {
+        background: transparent;
+        color: var(--accent-dark);
+        border: 1px solid #b9d8ee;
+        box-shadow: none;
+      }
+      .subscription-dialog .dialog-actions .secondary:hover {
+        background: #eef8ff;
+      }
+      .subscription-dialog .icon-button {
+        margin: 0;
+        padding: 4px 9px;
+        background: transparent;
+        color: var(--muted);
+        box-shadow: none;
+        font-size: 20px;
+        line-height: 1;
+      }
+      .subscription-dialog .icon-button:hover {
+        background: #f3f0e9;
+        transform: none;
+      }
       .status {
         margin-top: 8px;
         font-size: 12px;
@@ -301,6 +392,9 @@
               <button id="subscriptionConnect" type="button" data-i18n="subscription_connect">Connect</button>
               <button id="subscriptionDisconnect" type="button" style="display:none;" data-i18n="subscription_disconnect">Disconnect</button>
             </div>
+            <div class="subscription-help-row">
+              <button id="subscriptionHelp" type="button" data-i18n="subscription_help">How to start the bridge</button>
+            </div>
           </div>
 
           <div id="apiUrlControl">
@@ -454,6 +548,38 @@
           &nbsp;&middot;&nbsp; <span id="extVersion"></span>
         </div>
       </div>
+
+      <dialog id="subscriptionInstructionsDialog" class="subscription-dialog" aria-labelledby="subscriptionInstructionsTitle">
+        <div class="subscription-dialog-body">
+          <div class="subscription-dialog-header">
+            <h2 id="subscriptionInstructionsTitle" data-i18n="subscription_instructions_title">How to start the subscription bridge</h2>
+            <button id="subscriptionInstructionsCloseIcon" class="icon-button" type="button" aria-label="Close">&times;</button>
+          </div>
+          <p id="subscriptionInstructionsProvider"></p>
+          <ol>
+            <li>
+              <span data-i18n="subscription_instructions_step_install">Install the CLI for the selected provider.</span>
+              <code id="subscriptionInstructionsInstallCommand"></code>
+            </li>
+            <li>
+              <span data-i18n="subscription_instructions_step_login">Sign in to the provider account.</span>
+              <code id="subscriptionInstructionsLoginCommand"></code>
+            </li>
+            <li>
+              <span data-i18n="subscription_instructions_step_bridge">From the extension repository root, start the local bridge.</span>
+              <code>node bridge/server.mjs</code>
+            </li>
+            <li data-i18n="subscription_instructions_step_connect">Return here, select Subscription, and click Connect.</li>
+          </ol>
+          <div class="setup-note" data-i18n="subscription_instructions_note">
+            Keep the bridge terminal running while using subscription mode. API-key mode remains available at any time.
+          </div>
+          <div class="row dialog-actions">
+            <button id="subscriptionInstructionsOpenTab" class="secondary" type="button" data-i18n="subscription_instructions_open_tab">Open full instructions</button>
+            <button id="subscriptionInstructionsClose" type="button" data-i18n="subscription_instructions_close">Close</button>
+          </div>
+        </div>
+      </dialog>
     </div>
 
     <script src="i18n.js"></script>
