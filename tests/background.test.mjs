@@ -142,6 +142,66 @@ check(
   "deepseek-v4-flash",
   "DeepSeek retired alias"
 );
+const legacyChatBody = call(
+  "buildTranslateRequestBody",
+  { provider: "deepseek", model: "deepseek-chat", deepseekThinkingEnabled: true },
+  "こんにちは",
+  "ru",
+  "ja",
+  false
+);
+check(legacyChatBody.model, "deepseek-v4-flash", "Legacy chat uses DeepSeek V4 Flash");
+check(legacyChatBody.thinking.type, "disabled", "Legacy chat preserves non-thinking semantics");
+const legacyReasonerBody = call(
+  "buildTranslateRequestBody",
+  { provider: "deepseek", model: "deepseek-reasoner", deepseekThinkingEnabled: false },
+  "こんにちは",
+  "ru",
+  "ja",
+  false
+);
+check(legacyReasonerBody.model, "deepseek-v4-flash", "Legacy reasoner uses DeepSeek V4 Flash");
+check(legacyReasonerBody.thinking.type, "enabled", "Legacy reasoner preserves thinking semantics");
+const currentFlashBody = call(
+  "buildTranslateRequestBody",
+  { provider: "deepseek", model: "deepseek-v4-flash", deepseekThinkingEnabled: true },
+  "こんにちは",
+  "ru",
+  "ja",
+  false
+);
+check(currentFlashBody.thinking.type, "enabled", "Current DeepSeek models respect the user setting");
+
+let migratedDeepSeek = await call("migrateLegacyDeepSeekConfig", {
+  provider: "deepseek",
+  model: "deepseek-reasoner",
+  deepseekThinkingEnabled: false
+});
+check(migratedDeepSeek.model, "deepseek-v4-flash", "Legacy reasoner configuration is migrated");
+check(migratedDeepSeek.deepseekThinkingEnabled, true, "Reasoner migration enables thinking");
+check(syncStore.model, "deepseek-v4-flash", "DeepSeek migration is persisted");
+check(syncStore.deepseekThinkingEnabled, true, "Persisted reasoner migration enables thinking");
+
+migratedDeepSeek = await call("migrateLegacyDeepSeekConfig", {
+  provider: "deepseek",
+  model: "deepseek-chat",
+  deepseekThinkingEnabled: true
+});
+check(migratedDeepSeek.deepseekThinkingEnabled, false, "Chat migration disables thinking");
+
+const originalSyncSet = chrome.storage.sync.set;
+chrome.storage.sync.set = () => Promise.reject(new Error("Sync quota exceeded"));
+try {
+  migratedDeepSeek = await call("migrateLegacyDeepSeekConfig", {
+    provider: "deepseek",
+    model: "deepseek-reasoner",
+    deepseekThinkingEnabled: false
+  });
+  check(migratedDeepSeek.model, "deepseek-v4-flash", "Storage failure keeps the migrated model in memory");
+  check(migratedDeepSeek.deepseekThinkingEnabled, true, "Storage failure keeps reasoner thinking enabled");
+} finally {
+  chrome.storage.sync.set = originalSyncSet;
+}
 assert.throws(
   () => call("resolveModelForProvider", { provider: "yandexgpt", model: "text-embedding", yandexFolderId: "id" }),
   /Embedding models are not supported/
@@ -328,6 +388,58 @@ check(Array.from(executedScripts.at(-1).files), ["i18n.js", "content.js"], "Dyna
 check(typeof listeners.message, "function", "Runtime listener registered");
 check(typeof listeners.contextMenuClicked, "function", "Context menu listener registered");
 check(typeof listeners.command, "function", "Keyboard command listener registered");
+
+const deepSeekOptionsStart = optionsSource.indexOf("const DEEPSEEK_LEGACY_MODEL_CONFIG");
+const deepSeekOptionsEnd = optionsSource.indexOf("const PROVIDERS");
+assert.ok(
+  deepSeekOptionsStart >= 0 && deepSeekOptionsEnd > deepSeekOptionsStart,
+  "Options DeepSeek migration helper is present"
+);
+assertions += 1;
+const deepSeekOptionsSyncStore = {};
+const deepSeekOptionsContext = vm.createContext({
+  chrome: {
+    storage: {
+      sync: storageArea(deepSeekOptionsSyncStore)
+    }
+  }
+});
+vm.runInContext(optionsSource.slice(deepSeekOptionsStart, deepSeekOptionsEnd), deepSeekOptionsContext, {
+  filename: "options-deepseek-migration.js"
+});
+const migrateOptionsDeepSeek = vm.runInContext("migrateLegacyDeepSeekConfig", deepSeekOptionsContext);
+const migratedOptionsReasoner = migrateOptionsDeepSeek({
+  provider: "deepseek",
+  model: "deepseek-reasoner",
+  deepseekThinkingEnabled: false
+});
+check(migratedOptionsReasoner.model, "deepseek-v4-flash", "Options migrate legacy reasoner model");
+check(migratedOptionsReasoner.deepseekThinkingEnabled, true, "Options preserve reasoner thinking mode");
+check(deepSeekOptionsSyncStore.model, "deepseek-v4-flash", "Options persist the migrated model");
+
+const deepSeekFilterStart = optionsSource.indexOf("function filterDeepSeekModels");
+const deepSeekFilterEnd = optionsSource.indexOf("function loadDeepSeekCache");
+assert.ok(
+  deepSeekFilterStart >= 0 && deepSeekFilterEnd > deepSeekFilterStart,
+  "Options DeepSeek model filter is present"
+);
+assertions += 1;
+const deepSeekFilterContext = vm.createContext({});
+vm.runInContext(optionsSource.slice(deepSeekFilterStart, deepSeekFilterEnd), deepSeekFilterContext, {
+  filename: "options-deepseek-filter.js"
+});
+const filterDeepSeekModels = vm.runInContext("filterDeepSeekModels", deepSeekFilterContext);
+const filteredDeepSeekModels = Array.from(filterDeepSeekModels([
+  { id: "deepseek-chat" },
+  { id: "deepseek-reasoner" },
+  { id: "deepseek-v4-flash" },
+  { id: "deepseek-v4-pro" }
+]));
+check(
+  filteredDeepSeekModels,
+  ["deepseek-v4-flash", "deepseek-v4-pro"],
+  "Options hide retired DeepSeek aliases"
+);
 
 const keyHelpersStart = optionsSource.indexOf("function getKeyByProviderFromStore");
 const keyHelpersEnd = optionsSource.indexOf("function getLanguageDisplayName");

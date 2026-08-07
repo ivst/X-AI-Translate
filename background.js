@@ -475,15 +475,46 @@ function buildProviderHeaders(config, authToken) {
   return headers;
 }
 
+const DEEPSEEK_LEGACY_MODEL_CONFIG = {
+  "deepseek-chat": {
+    model: "deepseek-v4-flash",
+    thinkingEnabled: false
+  },
+  "deepseek-reasoner": {
+    model: "deepseek-v4-flash",
+    thinkingEnabled: true
+  }
+};
+
+function getDeepSeekLegacyModelConfig(model) {
+  return DEEPSEEK_LEGACY_MODEL_CONFIG[String(model || "").trim()] || null;
+}
+
+async function migrateLegacyDeepSeekConfig(config) {
+  if (config.provider !== "deepseek") return config;
+  const migration = getDeepSeekLegacyModelConfig(config.model);
+  if (!migration) return config;
+  const migrated = {
+    ...config,
+    model: migration.model,
+    deepseekThinkingEnabled: migration.thinkingEnabled
+  };
+  try {
+    await chrome.storage.sync.set({
+      model: migrated.model,
+      deepseekThinkingEnabled: migrated.deepseekThinkingEnabled
+    });
+  } catch (_) {
+    // Persisting the migration is best-effort and must not block translation.
+  }
+  return migrated;
+}
+
 function resolveModelForProvider(config) {
   const model = (config.model || "").trim();
   if (!model) return model;
   if (config.provider === "deepseek") {
-    // Keep existing installations working after DeepSeek retires these aliases.
-    if (model === "deepseek-chat" || model === "deepseek-reasoner") {
-      return "deepseek-v4-flash";
-    }
-    return model;
+    return getDeepSeekLegacyModelConfig(model)?.model || model;
   }
   if (config.provider !== "yandexgpt") {
     return model;
@@ -583,8 +614,12 @@ function buildTranslateRequestBody(config, text, targetLang, sourceLang, stream)
     stream: Boolean(stream)
   };
   if (config.provider === "deepseek") {
+    const legacyModel = getDeepSeekLegacyModelConfig(config.model);
+    const thinkingEnabled = legacyModel
+      ? legacyModel.thinkingEnabled
+      : config.deepseekThinkingEnabled === true;
     body.thinking = {
-      type: config.deepseekThinkingEnabled === true ? "enabled" : "disabled"
+      type: thinkingEnabled ? "enabled" : "disabled"
     };
   }
   return body;
@@ -814,7 +849,8 @@ function extractDeltaFromOpenAIChunk(json) {
 }
 
 async function translateText(text, overrides = {}) {
-  const config = await chrome.storage.sync.get(DEFAULT_CONFIG);
+  let config = await chrome.storage.sync.get(DEFAULT_CONFIG);
+  config = await migrateLegacyDeepSeekConfig(config);
   const targetLang = overrides.targetLang || config.targetLang;
   const sourceLang = overrides.sourceLang || config.sourceLang;
   if (isDirectTranslationProvider(config.provider)) {
@@ -850,7 +886,8 @@ async function translateText(text, overrides = {}) {
 }
 
 async function streamTranslate(text, onUpdate, overrides = {}) {
-  const config = await chrome.storage.sync.get(DEFAULT_CONFIG);
+  let config = await chrome.storage.sync.get(DEFAULT_CONFIG);
+  config = await migrateLegacyDeepSeekConfig(config);
   if (isDirectTranslationProvider(config.provider) || config.provider === "yandexgpt") {
     const translated = await translateText(text, overrides);
     onUpdate(translated, true);

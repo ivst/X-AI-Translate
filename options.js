@@ -23,6 +23,33 @@
   customModel: ""
 };
 
+const DEEPSEEK_LEGACY_MODEL_CONFIG = {
+  "deepseek-chat": {
+    model: "deepseek-v4-flash",
+    thinkingEnabled: false
+  },
+  "deepseek-reasoner": {
+    model: "deepseek-v4-flash",
+    thinkingEnabled: true
+  }
+};
+
+function migrateLegacyDeepSeekConfig(config) {
+  if (config.provider !== "deepseek") return config;
+  const migration = DEEPSEEK_LEGACY_MODEL_CONFIG[config.model];
+  if (!migration) return config;
+  const migrated = {
+    ...config,
+    model: migration.model,
+    deepseekThinkingEnabled: migration.thinkingEnabled
+  };
+  chrome.storage.sync.set({
+    model: migrated.model,
+    deepseekThinkingEnabled: migrated.deepseekThinkingEnabled
+  });
+  return migrated;
+}
+
 const PROVIDERS = {
   openai: {
     label: "OpenAI",
@@ -42,12 +69,7 @@ const PROVIDERS = {
   deepseek: {
     label: "DeepSeek",
     apiUrl: "https://api.deepseek.com",
-    models: [
-      "deepseek-v4-flash",
-      "deepseek-v4-pro",
-      "deepseek-chat",
-      "deepseek-reasoner"
-    ]
+    models: ["deepseek-v4-flash", "deepseek-v4-pro"]
   },
   googletranslate: {
     label: "Google Translate (free)",
@@ -737,16 +759,11 @@ async function fetchDeepSeekModels(apiUrl, apiKey) {
 }
 
 function filterDeepSeekModels(models) {
-  const ids = models
+  return models
     .map((m) => m.id)
     .filter((id) => /^deepseek-/i.test(String(id)))
+    .filter((id) => id !== "deepseek-chat" && id !== "deepseek-reasoner")
     .sort();
-  for (const legacyModel of ["deepseek-chat", "deepseek-reasoner"]) {
-    if (!ids.includes(legacyModel)) {
-      ids.push(legacyModel);
-    }
-  }
-  return ids;
 }
 
 function loadDeepSeekCache() {
@@ -1092,6 +1109,7 @@ async function getOpenrouterModels(apiKey, freeOnly, source) {
 
 
 chrome.storage.sync.get(defaultConfig, (data) => {
+  data = migrateLegacyDeepSeekConfig(data);
   const provider = data.provider || defaultConfig.provider;
   savedCustomApiUrl = data.customApiUrl || "";
   savedCustomModel = data.customModel || "";
