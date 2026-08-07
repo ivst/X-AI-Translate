@@ -51,10 +51,3 @@ Chrome Web Store: https://chromewebstore.google.com/detail/ai-translate-for-x-an
 
 ## ライセンス
 このプロジェクトは MIT ライセンスで提供されています。[LICENSE](LICENSE) を参照してください。
-
-## Current release (0.3.1)
-- このリリースはBYOK/APIキーのみを使用し、サブスクリプション用bridgeやnative hostは含みません。
-- Google Translateがデフォルトで、APIキーは不要です。DeepL API FreeにはDeepL APIキーが必要です。
-- Xの表示中の投稿とYouTubeコメントの自動翻訳は任意設定で、デフォルトでは無効です。
-- 翻訳速度を優先するため、DeepSeekの思考モードはデフォルトで無効です。
-

@@ -50,10 +50,3 @@ Chrome Web Store: https://chromewebstore.google.com/detail/ai-translate-for-x-an
 
 ## 许可证
 本项目采用 MIT 许可证发布。请参阅 [LICENSE](LICENSE)。
-
-## 当前版本 (0.3.1)
-- 本版本仅支持 BYOK/API Key，不包含订阅 bridge 或 native host。
-- Google Translate 是默认提供商，无需 API Key。DeepL API Free 需要 DeepL API Key。
-- X 可见帖子和 YouTube 评论的自动翻译为可选功能，默认关闭。
-- 为减少翻译延迟，DeepSeek 思考模式默认关闭。
-
