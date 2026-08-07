@@ -1070,6 +1070,8 @@ if (isExtensionContextValid()) {
         "enableYoutubeAutoTranslation",
         "sourceLang",
         "provider",
+        "authMode",
+        "authModeByProvider",
         "apiUrl",
         "model",
         "deepseekThinkingEnabled"

@@ -133,6 +133,18 @@
     "subtitle": "Configure providers, languages, and output behavior.",
     "ui_lang": "UI language",
     "provider": "Provider",
+    "auth_mode": "Connection",
+    "auth_mode_api_key": "API key",
+    "auth_mode_subscription": "Subscription",
+    "subscription_status_not_connected": "Not connected",
+    "subscription_status_checking": "Checking connection...",
+    "subscription_status_connected": "Connected",
+    "subscription_status_login_required": "Login required",
+    "subscription_status_not_verified": "Install and sign in to the provider CLI",
+    "subscription_status_login_started": "Login started in the local bridge.",
+    "subscription_hint": "Start the local subscription bridge to connect.",
+    "subscription_connect": "Connect",
+    "subscription_disconnect": "Disconnect",
     "api_base_url": "API Base URL (OpenAI-compatible)",
     "api_base_url_placeholder": "https://api.openai.com/v1",
     "api_base_url_deepl": "DeepL API Base URL",
@@ -529,6 +541,18 @@
     "subtitle": "Провайдеры, языки и режим вывода результата.",
     "ui_lang": "Язык интерфейса",
     "provider": "Провайдер",
+    "auth_mode": "Способ подключения",
+    "auth_mode_api_key": "API-ключ",
+    "auth_mode_subscription": "Подписка",
+    "subscription_status_not_connected": "Не подключено",
+    "subscription_status_checking": "Проверка подключения...",
+    "subscription_status_connected": "Подключено",
+    "subscription_status_login_required": "Требуется вход",
+    "subscription_status_not_verified": "Установите CLI провайдера и войдите в аккаунт",
+    "subscription_status_login_started": "Вход запущен в локальном bridge.",
+    "subscription_hint": "Запустите локальный bridge подписок для подключения.",
+    "subscription_connect": "Подключить",
+    "subscription_disconnect": "Отключить",
     "api_base_url": "Базовый URL API (OpenAI-совместимый)",
     "api_base_url_placeholder": "https://api.openai.com/v1",
     "api_base_url_deepl": "Базовый URL API DeepL",
@@ -1127,7 +1151,10 @@
     uiLanguageLabels: UI_LANGUAGE_LABELS,
     getLanguageDisplayName,
     getOptionsStrings(lang) {
-      return getScopedStrings(OPTIONS_I18N, lang);
+      return {
+        ...OPTIONS_I18N.en,
+        ...(OPTIONS_I18N[lang] || {})
+      };
     },
     getPopupStrings(lang) {
       return {

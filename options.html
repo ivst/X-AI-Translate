@@ -280,6 +280,29 @@
             </select>
           </div>
 
+          <fieldset id="authModeControl" style="display:none;">
+            <legend data-i18n="auth_mode">Connection</legend>
+            <div class="row" role="radiogroup" aria-label="Connection mode">
+              <label style="text-transform:none;letter-spacing:0;margin:0;">
+                <input type="radio" name="authMode" value="apiKey" checked />
+                <span data-i18n="auth_mode_api_key">API key</span>
+              </label>
+              <label style="text-transform:none;letter-spacing:0;margin:0;">
+                <input type="radio" name="authMode" value="subscription" />
+                <span data-i18n="auth_mode_subscription">Subscription</span>
+              </label>
+            </div>
+          </fieldset>
+
+          <div id="subscriptionControls" class="hint" style="display:none;">
+            <div id="subscriptionStatus" data-i18n="subscription_status_not_connected">Not connected</div>
+            <div id="subscriptionHint" style="margin-top:6px;" data-i18n="subscription_hint">Start the local subscription bridge to connect.</div>
+            <div class="row" style="margin-top:8px;">
+              <button id="subscriptionConnect" type="button" data-i18n="subscription_connect">Connect</button>
+              <button id="subscriptionDisconnect" type="button" style="display:none;" data-i18n="subscription_disconnect">Disconnect</button>
+            </div>
+          </div>
+
           <div id="apiUrlControl">
             <label id="apiUrlLabel" for="apiUrl" data-i18n="api_base_url">API Base URL (OpenAI-compatible)</label>
             <input id="apiUrl" type="text" placeholder="https://api.openai.com/v1" data-i18n-placeholder="api_base_url_placeholder" />

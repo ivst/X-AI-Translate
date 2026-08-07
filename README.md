@@ -39,7 +39,7 @@ Chrome extension for translating selected text, X (Twitter) posts, and YouTube c
 
 ## Usage
 1. Open the popup → click **Settings** (options page).
-2. Choose a provider. Google Translate needs no key; DeepL API Free needs a DeepL API key. Configure the remaining fields, languages, and output mode.
+2. Choose a provider. Google Translate needs no key; DeepL API Free needs a DeepL API key. OpenAI and Claude also offer an optional local subscription mode through the bridge described in `bridge/README.md`.
 3. On any page, select text and use the context menu or hotkey.
 4. On X and YouTube comments, click "Translate text" under supported content blocks to see inline translation. You can disable these buttons in Settings.
 
@@ -53,6 +53,11 @@ Chrome extension for translating selected text, X (Twitter) posts, and YouTube c
 - Optional API key sync across devices with security warning.
 - Separate toggles to show or hide translate buttons on X and YouTube.
 - Optional automatic translation of visible X posts and YouTube comments (disabled by default).
+- Optional subscription mode for OpenAI (Codex) and Claude (Claude Code); API-key mode remains the default.
+
+## Subscription mode
+
+Subscription mode is opt-in and requires the local bridge plus the authenticated provider CLI. Follow [`bridge/README.md`](bridge/README.md) before selecting Subscription in Settings. Gemini and all other providers continue to use their existing API-key flow.
 
 ## Permissions
 - The content script runs on `<all_urls>` to detect text selections and render inline translation UI where supported.
