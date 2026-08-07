@@ -928,6 +928,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (done) {
         saveLastTranslation(text, false);
       }
+    }, {
+      sourceLang: message.sourceLang,
+      targetLang: message.targetLang
     }).catch((err) => {
       const errorText = `Error: ${err.message || String(err)}`;
       sendToTab(sender.tab.id, {
