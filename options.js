@@ -414,10 +414,10 @@ function migrateLegacyKeyData(syncData, localData) {
   if (syncData.syncApiKeys) {
     const mergedSyncMap = { ...localMap, ...syncMap };
     chrome.storage.sync.set({ apiKeyByProvider: mergedSyncMap, apiKey: "" });
-    chrome.storage.local.set({ apiKey: "" });
+    chrome.storage.local.set({ apiKeyByProvider: {}, apiKey: "" });
     return {
       syncData: { ...syncData, apiKeyByProvider: mergedSyncMap, apiKey: "" },
-      localData: { ...localData, apiKeyByProvider: localMap, apiKey: "" }
+      localData: { ...localData, apiKeyByProvider: {}, apiKey: "" }
     };
   }
 
@@ -444,18 +444,22 @@ function migrateKeyStorage(useSyncKeys, currentProvider, done) {
         : includeLegacyKey(localMap, localData.apiKey, currentProvider);
       if (useSyncKeys) {
         const nextSyncMap = { ...migratedLocalMap, ...migratedSyncMap };
-        chrome.storage.local.set({ apiKey: "" });
         chrome.storage.sync.set(
           {
             syncApiKeys: true,
             apiKeyByProvider: nextSyncMap,
             apiKey: ""
           },
-          () => done?.()
+          () => {
+            chrome.storage.local.set(
+              { apiKeyByProvider: {}, apiKey: "" },
+              () => done?.()
+            );
+          }
         );
         return;
       }
-      const nextLocalMap = { ...migratedSyncMap, ...migratedLocalMap };
+      const nextLocalMap = { ...migratedLocalMap, ...migratedSyncMap };
       chrome.storage.local.set(
         {
           apiKeyByProvider: nextLocalMap,

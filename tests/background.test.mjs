@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 
 const source = await readFile(new URL("../background.js", import.meta.url), "utf8");
+const optionsSource = await readFile(new URL("../options.js", import.meta.url), "utf8");
 const localStore = {};
 const syncStore = {};
 const listeners = {};
@@ -13,15 +14,22 @@ let fetchMock = async () => {
 
 function storageArea(store) {
   return {
-    async get(defaults = {}) {
-      if (typeof defaults === "string") return { [defaults]: store[defaults] };
-      if (Array.isArray(defaults)) {
-        return Object.fromEntries(defaults.map((key) => [key, store[key]]));
+    get(defaults = {}, callback) {
+      let result;
+      if (typeof defaults === "string") {
+        result = { [defaults]: store[defaults] };
+      } else if (Array.isArray(defaults)) {
+        result = Object.fromEntries(defaults.map((key) => [key, store[key]]));
+      } else {
+        result = { ...defaults, ...store };
       }
-      return { ...defaults, ...store };
+      callback?.(result);
+      return Promise.resolve(result);
     },
-    async set(values) {
+    set(values, callback) {
       Object.assign(store, values);
+      callback?.();
+      return Promise.resolve();
     }
   };
 }
@@ -154,6 +162,34 @@ check(geminiHeaders["x-goog-api-key"], "gem-key", "Gemini API key header");
 Object.assign(localStore, { apiKeyByProvider: { openai: "openai-key", claude: "claude-key" } });
 check(await call("getAuthorizationToken", { provider: "openai", syncApiKeys: false, apiKeyByProvider: {} }), "openai-key", "Provider key isolation");
 check(await call("getAuthorizationToken", { provider: "claude", syncApiKeys: false, apiKeyByProvider: {} }), "claude-key", "Second provider key isolation");
+
+localStore.apiKeyByProvider.openai = "stale-local-key";
+localStore.apiKey = "stale-legacy-key";
+await assert.rejects(
+  call("getAuthorizationToken", {
+    provider: "openai",
+    syncApiKeys: true,
+    apiKeyByProvider: { openai: "" },
+    apiKey: "stale-synced-legacy-key"
+  }),
+  /API key is missing/
+);
+assertions += 1;
+check(syncStore.apiKeyByProvider?.openai, undefined, "Cleared synced key is not restored from local storage");
+check(syncStore.apiKey, "", "Mapped sync storage clears its legacy global key");
+check(localStore.apiKey, "", "Mapped sync storage clears stale local legacy key");
+
+localStore.apiKeyByProvider.openai = "";
+await assert.rejects(
+  call("getAuthorizationToken", {
+    provider: "openai",
+    syncApiKeys: false,
+    apiKeyByProvider: { openai: "stale-sync-key" }
+  }),
+  /API key is missing/
+);
+assertions += 1;
+localStore.apiKeyByProvider.openai = "openai-key";
 
 let directRequest;
 fetchMock = async (url, init) => {
@@ -292,5 +328,77 @@ check(Array.from(executedScripts.at(-1).files), ["i18n.js", "content.js"], "Dyna
 check(typeof listeners.message, "function", "Runtime listener registered");
 check(typeof listeners.contextMenuClicked, "function", "Context menu listener registered");
 check(typeof listeners.command, "function", "Keyboard command listener registered");
+
+const keyHelpersStart = optionsSource.indexOf("function getKeyByProviderFromStore");
+const keyHelpersEnd = optionsSource.indexOf("function getLanguageDisplayName");
+assert.ok(keyHelpersStart >= 0 && keyHelpersEnd > keyHelpersStart, "Options key helpers are present");
+assertions += 1;
+const optionSyncStore = {};
+const optionLocalStore = {};
+const optionsContext = vm.createContext({
+  chrome: {
+    storage: {
+      local: storageArea(optionLocalStore),
+      sync: storageArea(optionSyncStore)
+    }
+  },
+  defaultConfig: { provider: "googletranslate" }
+});
+vm.runInContext(optionsSource.slice(keyHelpersStart, keyHelpersEnd), optionsContext, {
+  filename: "options-key-storage.js"
+});
+const optionValue = (expression) => vm.runInContext(expression, optionsContext);
+const optionCall = (name, ...args) => optionValue(name)(...args);
+const replaceStore = (store, values) => {
+  for (const key of Object.keys(store)) delete store[key];
+  Object.assign(store, values);
+};
+const migrateOptionStorage = (useSyncKeys, provider = "openai") => new Promise((resolve) => {
+  optionCall("migrateKeyStorage", useSyncKeys, provider, resolve);
+});
+
+replaceStore(optionSyncStore, {
+  syncApiKeys: true,
+  apiKeyByProvider: { openai: "new-sync-key" },
+  apiKey: ""
+});
+replaceStore(optionLocalStore, {
+  apiKeyByProvider: { openai: "stale-local-key" },
+  apiKey: ""
+});
+let migratedOptions = optionCall("migrateLegacyKeyData", optionSyncStore, optionLocalStore);
+check(migratedOptions.syncData.apiKeyByProvider.openai, "new-sync-key", "Synced key wins during startup migration");
+check(Object.keys(optionLocalStore.apiKeyByProvider), [], "Startup sync migration clears local key map");
+
+replaceStore(optionSyncStore, {
+  syncApiKeys: true,
+  apiKeyByProvider: { openai: "" },
+  apiKey: ""
+});
+replaceStore(optionLocalStore, {
+  apiKeyByProvider: { openai: "stale-local-key" },
+  apiKey: ""
+});
+migratedOptions = optionCall("migrateLegacyKeyData", optionSyncStore, optionLocalStore);
+check(migratedOptions.syncData.apiKeyByProvider.openai, "", "Explicitly cleared synced key remains cleared");
+check(Object.keys(optionLocalStore.apiKeyByProvider), [], "Cleared sync state removes stale local copy");
+
+replaceStore(optionSyncStore, { apiKeyByProvider: { openai: "new-sync-key" }, apiKey: "" });
+replaceStore(optionLocalStore, { apiKeyByProvider: { openai: "stale-local-key" }, apiKey: "" });
+await migrateOptionStorage(false);
+check(optionLocalStore.apiKeyByProvider.openai, "new-sync-key", "Sync-to-local migration keeps the current synced key");
+check(Object.keys(optionSyncStore.apiKeyByProvider), [], "Sync-to-local migration clears synced key map");
+
+replaceStore(optionSyncStore, { apiKeyByProvider: { openai: "new-sync-key" }, apiKey: "" });
+replaceStore(optionLocalStore, { apiKeyByProvider: { openai: "stale-local-key" }, apiKey: "" });
+await migrateOptionStorage(true);
+check(optionSyncStore.apiKeyByProvider.openai, "new-sync-key", "Local-to-sync migration preserves the current synced key");
+check(Object.keys(optionLocalStore.apiKeyByProvider), [], "Local-to-sync migration clears local key map");
+
+replaceStore(optionSyncStore, { apiKeyByProvider: {}, apiKey: "" });
+replaceStore(optionLocalStore, { apiKeyByProvider: { openai: "current-local-key" }, apiKey: "" });
+await migrateOptionStorage(true);
+check(optionSyncStore.apiKeyByProvider.openai, "current-local-key", "Local-to-sync migration copies the current local key");
+check(Object.keys(optionLocalStore.apiKeyByProvider), [], "Copied local key is removed from local storage");
 
 console.log(`PASS: ${assertions} assertions for background.js`);
