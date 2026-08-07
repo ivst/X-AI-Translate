@@ -254,6 +254,7 @@
           <a id="setupLinkClaude" href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer">Claude</a>,
           <a id="setupLinkGemini" href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer">Gemini</a>,
           <a id="setupLinkDeepSeek" href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener noreferrer">DeepSeek</a>,
+          <a id="setupLinkDeepL" href="https://www.deepl.com/pro-api" target="_blank" rel="noopener noreferrer">DeepL</a>,
           <a id="setupLinkOpenRouter" href="https://openrouter.ai/settings/keys" target="_blank" rel="noopener noreferrer">OpenRouter</a>,
           <a id="setupLinkYandex" href="https://yandex.cloud/en/docs/ai-studio/operations/get-api-key" target="_blank" rel="noopener noreferrer">YandexGPT</a>.
           <span id="setupNoteWarning" class="setup-note-warning">For security, create a separate API key with minimal permissions and a limited budget.</span>
@@ -271,21 +272,25 @@
               <option value="claude">Claude</option>
               <option value="gemini">Gemini</option>
               <option value="deepseek">DeepSeek</option>
+              <option value="googletranslate">Google Translate (free)</option>
+              <option value="deepl">DeepL API Free</option>
               <option value="yandexgpt">YandexGPT</option>
               <option value="openrouter">OpenRouter</option>
               <option value="custom">Custom</option>
             </select>
           </div>
 
-          <div>
+          <div id="apiUrlControl">
             <label for="apiUrl" data-i18n="api_base_url">API Base URL (OpenAI-compatible)</label>
             <input id="apiUrl" type="text" placeholder="https://api.openai.com/v1" data-i18n-placeholder="api_base_url_placeholder" />
           </div>
 
-          <div>
+          <div id="apiKeyControl">
             <label for="apiKey" data-i18n="api_key">API Key</label>
             <input id="apiKey" type="password" placeholder="sk-..." data-i18n-placeholder="api_key_placeholder" />
           </div>
+
+          <div id="providerHint" class="hint" style="display:none;"></div>
 
           <div id="yandexControls" style="display:none;">
             <label for="yandexFolderId">Yandex Folder ID</label>
@@ -294,7 +299,7 @@
             <div class="hint">Required if model is not a full <code>gpt://...</code> URI.</div>
           </div>
 
-          <div>
+          <div id="modelControl">
             <label for="model" data-i18n="model">Model</label>
             <select id="model"></select>
             <input id="modelCustom" type="text" placeholder="Custom model id" data-i18n-placeholder="model_custom_placeholder" />

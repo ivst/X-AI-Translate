@@ -46,6 +46,20 @@ const PROVIDERS = {
       "deepseek-reasoner"
     ]
   },
+  googletranslate: {
+    label: "Google Translate (free)",
+    apiUrl: "https://translate.googleapis.com",
+    models: ["google-translate"],
+    direct: true,
+    requiresApiKey: false
+  },
+  deepl: {
+    label: "DeepL API Free",
+    apiUrl: "https://api-free.deepl.com",
+    models: ["deepl-translation"],
+    direct: true,
+    requiresApiKey: true
+  },
   yandexgpt: {
     label: "YandexGPT",
     apiUrl: "https://llm.api.cloud.yandex.net/v1",
@@ -74,6 +88,10 @@ const apiUrlInput = document.getElementById("apiUrl");
 const apiKeyInput = document.getElementById("apiKey");
 const modelSelect = document.getElementById("model");
 const modelCustomInput = document.getElementById("modelCustom");
+const apiUrlControl = document.getElementById("apiUrlControl");
+const apiKeyControl = document.getElementById("apiKeyControl");
+const modelControl = document.getElementById("modelControl");
+const providerHint = document.getElementById("providerHint");
 const targetLangSelect = document.getElementById("targetLang");
 const sourceLangSelect = document.getElementById("sourceLang");
 const overlayModeSelect = document.getElementById("overlayMode");
@@ -97,6 +115,7 @@ const setupLinkOpenAI = document.getElementById("setupLinkOpenAI");
 const setupLinkClaude = document.getElementById("setupLinkClaude");
 const setupLinkGemini = document.getElementById("setupLinkGemini");
 const setupLinkDeepSeek = document.getElementById("setupLinkDeepSeek");
+const setupLinkDeepL = document.getElementById("setupLinkDeepL");
 const setupLinkOpenRouter = document.getElementById("setupLinkOpenRouter");
 const setupLinkYandex = document.getElementById("setupLinkYandex");
 const syncApiKeysCheckbox = document.getElementById("syncApiKeys");
@@ -269,6 +288,40 @@ const SYNC_KEYS_I18N = {
   }
 };
 
+const DIRECT_PROVIDER_SETUP_NOTE_I18N = {
+  googletranslate: {
+    en: {
+      intro: "Google Translate uses a free web endpoint and does not require an API key.",
+      warning: "This endpoint is unofficial and may be rate-limited by Google. Avoid sending sensitive text."
+    },
+    ru: {
+      intro: "Google Translate использует бесплатный веб-эндпоинт, API-ключ не требуется.",
+      warning: "Эндпоинт неофициальный и может ограничиваться Google. Не отправляйте конфиденциальный текст."
+    }
+  },
+  deepl: {
+    en: {
+      intro: "DeepL API Free requires a free DeepL API key.",
+      warning: "DeepL applies its own free-plan quota and terms. Store the key locally unless sync is needed."
+    },
+    ru: {
+      intro: "Для DeepL API Free нужен бесплатный API-ключ DeepL.",
+      warning: "На DeepL распространяются ограничения и условия бесплатного плана. Храните ключ локально, если синхронизация не нужна."
+    }
+  }
+};
+
+const DIRECT_PROVIDER_HINT_I18N = {
+  googletranslate: {
+    en: "Uses Google Translate's free web endpoint. No API key is required.",
+    ru: "Использует бесплатный веб-эндпоинт Google Translate. API-ключ не требуется."
+  },
+  deepl: {
+    en: "Uses the DeepL API Free endpoint. Create a free DeepL API key to get started.",
+    ru: "Использует эндпоинт DeepL API Free. Для начала создайте бесплатный API-ключ DeepL."
+  }
+};
+
 function getLocaleStrings(lang) {
   return window.AITranslateI18n.getOptionsStrings(lang);
 }
@@ -293,8 +346,10 @@ function applyTranslations(lang) {
 function applySetupNoteTranslations(lang) {
   const strings = SETUP_NOTE_I18N[lang] || SETUP_NOTE_I18N.en;
   const syncStrings = SYNC_KEYS_I18N[lang] || SYNC_KEYS_I18N.en;
-  setupNoteIntro.textContent = strings.intro;
-  setupNoteWarning.textContent = strings.warning;
+  const directNote = DIRECT_PROVIDER_SETUP_NOTE_I18N[providerSelect.value]?.[lang]
+    || DIRECT_PROVIDER_SETUP_NOTE_I18N[providerSelect.value]?.en;
+  setupNoteIntro.textContent = directNote?.intro || strings.intro;
+  setupNoteWarning.textContent = directNote?.warning || strings.warning;
   setupNoteLinksLabel.textContent = strings.links;
   setupLinkOpenAI.textContent = "OpenAI";
   if (setupLinkClaude) {
@@ -304,6 +359,9 @@ function applySetupNoteTranslations(lang) {
     setupLinkGemini.textContent = "Gemini";
   }
   setupLinkDeepSeek.textContent = "DeepSeek";
+  if (setupLinkDeepL) {
+    setupLinkDeepL.textContent = "DeepL";
+  }
   setupLinkOpenRouter.textContent = "OpenRouter";
   setupLinkYandex.textContent = "YandexGPT";
   if (syncApiKeysLabel) {
@@ -469,15 +527,36 @@ function populateModels(models, selected, provider = providerSelect.value) {
   }
 }
 
+function isDirectProvider(provider) {
+  return Boolean(PROVIDERS[provider]?.direct);
+}
+
+function setProviderControls(provider) {
+  const preset = PROVIDERS[provider] || PROVIDERS.custom;
+  const isDirect = Boolean(preset.direct);
+  const isGoogle = provider === "googletranslate";
+  const uiLang = uiLangSelect?.value || "en";
+
+  apiUrlControl.style.display = isGoogle ? "none" : "block";
+  apiKeyControl.style.display = preset.requiresApiKey === false ? "none" : "block";
+  modelControl.style.display = isDirect ? "none" : "block";
+  providerHint.textContent = DIRECT_PROVIDER_HINT_I18N[provider]?.[uiLang]
+    || DIRECT_PROVIDER_HINT_I18N[provider]?.en
+    || "";
+  providerHint.style.display = isDirect ? "block" : "none";
+}
+
 function applyProviderDefaults(provider, currentModel) {
   const preset = PROVIDERS[provider] || PROVIDERS.custom;
   if (provider === "custom") {
     apiUrlInput.value = savedCustomApiUrl || "";
     populateModels([], savedCustomModel || "");
+    setProviderControls(provider);
     return;
   }
   apiUrlInput.value = preset.apiUrl || "";
   populateModels(preset.models, currentModel);
+  setProviderControls(provider);
 }
 
 function setOpenrouterControlsVisible(visible) {
@@ -972,6 +1051,7 @@ chrome.storage.sync.get(defaultConfig, (data) => {
   const uiLang = data.uiLang || defaultConfig.uiLang;
   buildUiLanguageOptions(uiLangSelect);
   uiLangSelect.value = uiLang;
+  setProviderControls(provider);
   buildLanguageOptions(targetLangSelect, uiLang);
   buildLanguageOptions(sourceLangSelect, uiLang);
   targetLangSelect.value = data.targetLang || defaultConfig.targetLang;
@@ -1001,8 +1081,10 @@ chrome.storage.sync.get(defaultConfig, (data) => {
   yandexFolderInput.value = data.yandexFolderId || defaultConfig.yandexFolderId;
   setOpenrouterControlsVisible(provider === "openrouter");
   setYandexControlsVisible(provider === "yandexgpt");
+  setProviderControls(provider);
   applyTranslations(uiLang);
   applySetupNoteTranslations(uiLang);
+  setProviderControls(providerSelect.value);
   document.getElementById("extVersion").textContent =
     "v" + chrome.runtime.getManifest().version;
   chrome.storage.local.get({ apiKeyByProvider: {}, apiKey: "" }, (localData) => {
@@ -1087,6 +1169,8 @@ providerSelect.addEventListener("change", () => {
   applyProviderDefaults(provider, provider === "custom" ? savedCustomModel : "");
   setOpenrouterControlsVisible(provider === "openrouter");
   setYandexControlsVisible(provider === "yandexgpt");
+  setProviderControls(provider);
+  applySetupNoteTranslations(uiLangSelect.value);
   chrome.storage.sync.get(defaultConfig, (data) => {
     chrome.storage.local.get({ apiKeyByProvider: {}, apiKey: "" }, (localData) => {
       savedCustomApiUrl = data.customApiUrl || savedCustomApiUrl;
@@ -1283,6 +1367,7 @@ uiLangSelect.addEventListener("change", () => {
   const currentSource = sourceLangSelect.value;
   applyTranslations(uiLang);
   applySetupNoteTranslations(uiLang);
+  setProviderControls(providerSelect.value);
   buildLanguageOptions(targetLangSelect, uiLang, currentTarget);
   buildLanguageOptions(sourceLangSelect, uiLang, currentSource);
   chrome.storage.sync.set({ uiLang });
@@ -1375,7 +1460,7 @@ document.getElementById("save").addEventListener("click", () => {
     yandexFolderId: yandexFolderInput.value.trim()
   };
 
-  if (!config.apiUrl || !config.model) {
+  if (!config.apiUrl || (!isDirectProvider(provider) && !config.model)) {
     setStatus(getLocaleStrings(uiLangSelect.value).status_required, true);
     return;
   }

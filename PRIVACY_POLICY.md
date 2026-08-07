@@ -5,7 +5,7 @@ Summary
   - selected text on web pages,
   - inline text on X (Twitter) and YouTube comments when you press the translate button,
   - text entered by you in the popup "Quick Translate" fields.
-- Text is sent only to the AI provider endpoint you configure (OpenAI-compatible/custom or supported native providers).
+- Text is sent only to the translation provider endpoint you configure (including Google Translate's free web endpoint, DeepL API Free, OpenAI-compatible/custom, or other supported native providers).
 - The extension stores settings in Chrome storage to keep your configuration between sessions.
 
 Data We Process
