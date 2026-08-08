@@ -320,12 +320,10 @@ const SYNC_KEYS_I18N = {
 const DIRECT_PROVIDER_SETUP_NOTE_I18N = {
   googletranslate: {
     en: {
-      intro: "Google Translate uses a free web endpoint and does not require an API key.",
-      warning: "This endpoint is unofficial and may be rate-limited by Google. Avoid sending sensitive text."
+      intro: "Google Translate uses a free web endpoint and does not require an API key."
     },
     ru: {
-      intro: "Google Translate использует бесплатный веб-эндпоинт, API-ключ не требуется.",
-      warning: "Эндпоинт неофициальный и может ограничиваться Google. Не отправляйте конфиденциальный текст."
+      intro: "Google Translate использует бесплатный веб-эндпоинт, API-ключ не требуется."
     }
   },
   deepl: {
@@ -379,6 +377,7 @@ function applySetupNoteTranslations(lang) {
     || DIRECT_PROVIDER_SETUP_NOTE_I18N[providerSelect.value]?.en;
   setupNoteIntro.textContent = directNote?.intro || strings.intro;
   setupNoteWarning.textContent = directNote?.warning || strings.warning;
+  setupNoteWarning.hidden = providerSelect.value === "googletranslate";
   setupNoteLinksLabel.textContent = strings.links;
   setupLinkOpenAI.textContent = "OpenAI";
   if (setupLinkClaude) {

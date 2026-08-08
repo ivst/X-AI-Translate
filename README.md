@@ -64,7 +64,7 @@ Chrome extension for translating selected text, X (Twitter) posts, and YouTube c
 - Entry files: `background.js`, `content.js`, `popup.html`, `popup.js`, `options.html`, `options.js`
 
 ## Privacy
-Selected text is sent only to the API endpoint you configure.
+Selected text is sent only to the API endpoint you configure. When enabled, visible X posts and YouTube comments are also sent to that endpoint for automatic translation.
 See `PRIVACY_POLICY.md`.
 
 ## Contact
