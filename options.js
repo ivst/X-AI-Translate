@@ -320,52 +320,68 @@ const SYNC_KEYS_I18N = {
 const DIRECT_PROVIDER_SETUP_NOTE_I18N = {
   googletranslate: {
     ar: {
-      intro: "يستخدم Google Translate نقطة وصول ويب مجانية ولا يتطلب مفتاح API."
+      intro: "يستخدم Google Translate نقطة وصول ويب مجانية ولا يتطلب مفتاح API.",
+      warning: "تجنب إرسال نصوص حساسة، إذ قد تُفرض قيود على نقطة الوصول المجانية أو قد تصبح غير متاحة."
     },
     zh: {
-      intro: "Google Translate 使用免费的 Web 端点，无需 API 密钥。"
+      intro: "Google Translate 使用免费的 Web 端点，无需 API 密钥。",
+      warning: "请避免发送敏感文本，因为此免费 Web 端点可能受到限流或变得不可用。"
     },
     en: {
-      intro: "Google Translate uses a free web endpoint and does not require an API key."
+      intro: "Google Translate uses a free web endpoint and does not require an API key.",
+      warning: "Avoid sending sensitive text because this free web endpoint may be rate-limited or unavailable."
     },
     fr: {
-      intro: "Google Translate utilise un endpoint Web gratuit et ne nécessite pas de clé API."
+      intro: "Google Translate utilise un endpoint Web gratuit et ne nécessite pas de clé API.",
+      warning: "Évitez d’envoyer des textes sensibles, car cet endpoint Web gratuit peut être soumis à des limites ou devenir indisponible."
     },
     de: {
-      intro: "Google Translate verwendet einen kostenlosen Web-Endpunkt und benötigt keinen API-Schlüssel."
+      intro: "Google Translate verwendet einen kostenlosen Web-Endpunkt und benötigt keinen API-Schlüssel.",
+      warning: "Senden Sie keine vertraulichen Texte, da dieser kostenlose Web-Endpunkt eingeschränkt werden oder nicht verfügbar sein kann."
     },
     el: {
-      intro: "Το Google Translate χρησιμοποιεί ένα δωρεάν web endpoint και δεν απαιτεί κλειδί API."
+      intro: "Το Google Translate χρησιμοποιεί ένα δωρεάν web endpoint και δεν απαιτεί κλειδί API.",
+      warning: "Αποφύγετε την αποστολή ευαίσθητου κειμένου, καθώς αυτό το δωρεάν web endpoint μπορεί να υποβληθεί σε περιορισμούς ή να μην είναι διαθέσιμο."
     },
     he: {
-      intro: "Google Translate משתמש בנקודת קצה חינמית באינטרנט ואינו דורש מפתח API."
+      intro: "Google Translate משתמש בנקודת קצה חינמית באינטרנט ואינו דורש מפתח API.",
+      warning: "הימנעו משליחת טקסט רגיש, מכיוון שנקודת הקצה החינמית עשויה להיות מוגבלת או לא זמינה."
     },
     it: {
-      intro: "Google Translate utilizza un endpoint web gratuito e non richiede una chiave API."
+      intro: "Google Translate utilizza un endpoint web gratuito e non richiede una chiave API.",
+      warning: "Evita di inviare testi sensibili, perché questo endpoint web gratuito potrebbe essere soggetto a limitazioni o diventare non disponibile."
     },
     ja: {
-      intro: "Google Translate は無料のウェブエンドポイントを使用し、API キーは必要ありません。"
+      intro: "Google Translate は無料のウェブエンドポイントを使用し、API キーは必要ありません。",
+      warning: "この無料ウェブエンドポイントは利用制限を受けたり利用できなくなったりする可能性があるため、機密性の高いテキストは送信しないでください。"
     },
     ko: {
-      intro: "Google Translate는 무료 웹 엔드포인트를 사용하며 API 키가 필요하지 않습니다."
+      intro: "Google Translate는 무료 웹 엔드포인트를 사용하며 API 키가 필요하지 않습니다.",
+      warning: "이 무료 웹 엔드포인트는 요청이 제한되거나 사용할 수 없게 될 수 있으므로 민감한 텍스트를 보내지 마세요."
     },
     pt: {
-      intro: "O Google Translate usa um endpoint web gratuito e não exige uma chave de API."
+      intro: "O Google Translate usa um endpoint web gratuito e não exige uma chave de API.",
+      warning: "Evite enviar textos confidenciais, pois este endpoint web gratuito pode sofrer limitações ou ficar indisponível."
     },
     ru: {
-      intro: "Google Translate использует бесплатный веб-эндпоинт, API-ключ не требуется."
+      intro: "Google Translate использует бесплатный веб-эндпоинт, API-ключ не требуется.",
+      warning: "Не отправляйте конфиденциальный текст: бесплатный веб-эндпоинт может ограничиваться или становиться недоступным."
     },
     es: {
-      intro: "Google Translate utiliza un endpoint web gratuito y no requiere una clave API."
+      intro: "Google Translate utiliza un endpoint web gratuito y no requiere una clave API.",
+      warning: "Evita enviar texto confidencial, ya que este endpoint web gratuito puede estar sujeto a límites o dejar de estar disponible."
     },
     th: {
-      intro: "Google Translate ใช้เว็บเอนด์พอยต์ฟรีและไม่ต้องใช้คีย์ API"
+      intro: "Google Translate ใช้เว็บเอนด์พอยต์ฟรีและไม่ต้องใช้คีย์ API",
+      warning: "หลีกเลี่ยงการส่งข้อความที่ละเอียดอ่อน เนื่องจากเว็บเอนด์พอยต์ฟรีนี้อาจถูกจำกัดการใช้งานหรือไม่พร้อมให้บริการ"
     },
     tr: {
-      intro: "Google Translate ücretsiz bir web uç noktası kullanır ve API anahtarı gerektirmez."
+      intro: "Google Translate ücretsiz bir web uç noktası kullanır ve API anahtarı gerektirmez.",
+      warning: "Bu ücretsiz web uç noktası kısıtlanabileceği veya kullanılamaz hâle gelebileceği için hassas metinler göndermeyin."
     },
     uk: {
-      intro: "Google Translate використовує безкоштовний веб-ендпойнт і не потребує API-ключа."
+      intro: "Google Translate використовує безкоштовний веб-ендпойнт і не потребує API-ключа.",
+      warning: "Не надсилайте конфіденційний текст, оскільки цей безкоштовний веб-ендпойнт може обмежуватися або стати недоступним."
     }
   },
   deepl: {
@@ -503,7 +519,7 @@ function applySetupNoteTranslations(lang) {
     || DIRECT_PROVIDER_SETUP_NOTE_I18N[providerSelect.value]?.en;
   setupNoteIntro.textContent = directNote?.intro || strings.intro;
   setupNoteWarning.textContent = directNote?.warning || strings.warning;
-  setupNoteWarning.hidden = providerSelect.value === "googletranslate";
+  setupNoteWarning.hidden = false;
   setupNoteLinksLabel.textContent = strings.links;
   setupLinkOpenAI.textContent = "OpenAI";
   if (setupLinkClaude) {
