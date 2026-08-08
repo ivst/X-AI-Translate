@@ -319,33 +319,159 @@ const SYNC_KEYS_I18N = {
 
 const DIRECT_PROVIDER_SETUP_NOTE_I18N = {
   googletranslate: {
+    ar: {
+      intro: "يستخدم Google Translate نقطة وصول ويب مجانية ولا يتطلب مفتاح API."
+    },
+    zh: {
+      intro: "Google Translate 使用免费的 Web 端点，无需 API 密钥。"
+    },
     en: {
       intro: "Google Translate uses a free web endpoint and does not require an API key."
     },
+    fr: {
+      intro: "Google Translate utilise un endpoint Web gratuit et ne nécessite pas de clé API."
+    },
+    de: {
+      intro: "Google Translate verwendet einen kostenlosen Web-Endpunkt und benötigt keinen API-Schlüssel."
+    },
+    el: {
+      intro: "Το Google Translate χρησιμοποιεί ένα δωρεάν web endpoint και δεν απαιτεί κλειδί API."
+    },
+    he: {
+      intro: "Google Translate משתמש בנקודת קצה חינמית באינטרנט ואינו דורש מפתח API."
+    },
+    it: {
+      intro: "Google Translate utilizza un endpoint web gratuito e non richiede una chiave API."
+    },
+    ja: {
+      intro: "Google Translate は無料のウェブエンドポイントを使用し、API キーは必要ありません。"
+    },
+    ko: {
+      intro: "Google Translate는 무료 웹 엔드포인트를 사용하며 API 키가 필요하지 않습니다."
+    },
+    pt: {
+      intro: "O Google Translate usa um endpoint web gratuito e não exige uma chave de API."
+    },
     ru: {
       intro: "Google Translate использует бесплатный веб-эндпоинт, API-ключ не требуется."
+    },
+    es: {
+      intro: "Google Translate utiliza un endpoint web gratuito y no requiere una clave API."
+    },
+    th: {
+      intro: "Google Translate ใช้เว็บเอนด์พอยต์ฟรีและไม่ต้องใช้คีย์ API"
+    },
+    tr: {
+      intro: "Google Translate ücretsiz bir web uç noktası kullanır ve API anahtarı gerektirmez."
+    },
+    uk: {
+      intro: "Google Translate використовує безкоштовний веб-ендпойнт і не потребує API-ключа."
     }
   },
   deepl: {
+    ar: {
+      intro: "يتطلب DeepL API Free مفتاح API مجانيًا من DeepL.",
+      warning: "تطبق DeepL حصتها وشروطها الخاصة بالخطة المجانية. احفظ المفتاح محليًا، ما لم تكن بحاجة إلى المزامنة."
+    },
+    zh: {
+      intro: "DeepL API Free 需要免费的 DeepL API 密钥。",
+      warning: "DeepL 对免费方案设有自己的配额和条款。如非必要同步，请将密钥存储在本地。"
+    },
     en: {
       intro: "DeepL API Free requires a free DeepL API key.",
       warning: "DeepL applies its own free-plan quota and terms. Store the key locally unless sync is needed."
     },
+    fr: {
+      intro: "DeepL API Free nécessite une clé API DeepL gratuite.",
+      warning: "DeepL applique ses propres quotas et conditions pour l’offre gratuite. Conservez la clé localement, sauf si la synchronisation est nécessaire."
+    },
+    de: {
+      intro: "DeepL API Free erfordert einen kostenlosen DeepL-API-Schlüssel.",
+      warning: "DeepL verwendet eigene Kontingente und Bedingungen für den kostenlosen Tarif. Speichern Sie den Schlüssel lokal, sofern keine Synchronisierung erforderlich ist."
+    },
+    el: {
+      intro: "Το DeepL API Free απαιτεί ένα δωρεάν κλειδί API της DeepL.",
+      warning: "Η DeepL εφαρμόζει τη δική της ποσόστωση και τους δικούς της όρους για το δωρεάν πρόγραμμα. Αποθηκεύστε το κλειδί τοπικά, εκτός αν χρειάζεστε συγχρονισμό."
+    },
+    he: {
+      intro: "DeepL API Free דורש מפתח API חינמי של DeepL.",
+      warning: "DeepL מחילה מכסה ותנאים משלה על התוכנית החינמית. שמרו את המפתח באופן מקומי, אלא אם יש צורך בסנכרון."
+    },
+    it: {
+      intro: "DeepL API Free richiede una chiave API gratuita di DeepL.",
+      warning: "DeepL applica quote e condizioni proprie al piano gratuito. Conserva la chiave localmente, a meno che non sia necessaria la sincronizzazione."
+    },
+    ja: {
+      intro: "DeepL API Free では、無料の DeepL API キーが必要です。",
+      warning: "DeepL では無料プラン固有の利用上限と利用条件が適用されます。同期が必要な場合を除き、キーはローカルに保存してください。"
+    },
+    ko: {
+      intro: "DeepL API Free를 사용하려면 무료 DeepL API 키가 필요합니다.",
+      warning: "DeepL은 무료 요금제에 자체 할당량과 약관을 적용합니다. 동기화가 필요하지 않다면 키를 로컬에 저장하세요."
+    },
+    pt: {
+      intro: "O DeepL API Free exige uma chave de API gratuita da DeepL.",
+      warning: "A DeepL aplica sua própria cota e seus próprios termos ao plano gratuito. Armazene a chave localmente, a menos que a sincronização seja necessária."
+    },
     ru: {
       intro: "Для DeepL API Free нужен бесплатный API-ключ DeepL.",
       warning: "На DeepL распространяются ограничения и условия бесплатного плана. Храните ключ локально, если синхронизация не нужна."
+    },
+    es: {
+      intro: "DeepL API Free requiere una clave API gratuita de DeepL.",
+      warning: "DeepL aplica su propia cuota y sus propios términos al plan gratuito. Guarda la clave localmente, salvo que necesites sincronizarla."
+    },
+    th: {
+      intro: "DeepL API Free ต้องใช้คีย์ API ฟรีจาก DeepL",
+      warning: "DeepL ใช้โควตาและข้อกำหนดของตนเองสำหรับแพ็กเกจฟรี ให้เก็บคีย์ไว้ในเครื่อง เว้นแต่จำเป็นต้องซิงก์"
+    },
+    tr: {
+      intro: "DeepL API Free için ücretsiz bir DeepL API anahtarı gerekir.",
+      warning: "DeepL, ücretsiz planı için kendi kotasını ve koşullarını uygular. Senkronizasyon gerekmiyorsa anahtarı yerel olarak saklayın."
+    },
+    uk: {
+      intro: "Для DeepL API Free потрібен безкоштовний API-ключ DeepL.",
+      warning: "DeepL застосовує власну квоту й умови безкоштовного плану. Зберігайте ключ локально, якщо синхронізація не потрібна."
     }
   }
 };
 
 const DIRECT_PROVIDER_HINT_I18N = {
   googletranslate: {
+    ar: "يستخدم نقطة وصول الويب المجانية من Google Translate. لا يلزم مفتاح API.",
+    zh: "使用 Google Translate 的免费 Web 端点。无需 API 密钥。",
     en: "Uses Google Translate's free web endpoint. No API key is required.",
-    ru: "Использует бесплатный веб-эндпоинт Google Translate. API-ключ не требуется."
+    fr: "Utilise l’endpoint Web gratuit de Google Translate. Aucune clé API n’est requise.",
+    de: "Verwendet den kostenlosen Web-Endpunkt von Google Translate. Kein API-Schlüssel erforderlich.",
+    el: "Χρησιμοποιεί το δωρεάν web endpoint του Google Translate. Δεν απαιτείται κλειδί API.",
+    he: "משתמש בנקודת הקצה החינמית של Google Translate באינטרנט. אין צורך במפתח API.",
+    it: "Utilizza l’endpoint web gratuito di Google Translate. Non è richiesta alcuna chiave API.",
+    ja: "Google Translate の無料ウェブエンドポイントを使用します。API キーは必要ありません。",
+    ko: "Google Translate의 무료 웹 엔드포인트를 사용합니다. API 키가 필요하지 않습니다.",
+    pt: "Usa o endpoint web gratuito do Google Translate. Não é necessária uma chave de API.",
+    ru: "Использует бесплатный веб-эндпоинт Google Translate. API-ключ не требуется.",
+    es: "Usa el endpoint web gratuito de Google Translate. No se requiere una clave API.",
+    th: "ใช้เว็บเอนด์พอยต์ฟรีของ Google Translate ไม่ต้องใช้คีย์ API",
+    tr: "Google Translate'in ücretsiz web uç noktasını kullanır. API anahtarı gerekmez.",
+    uk: "Використовує безкоштовний веб-ендпойнт Google Translate. API-ключ не потрібен."
   },
   deepl: {
+    ar: "يستخدم نقطة وصول DeepL API Free. أنشئ مفتاح API مجانيًا من DeepL للبدء.",
+    zh: "使用 DeepL API Free 端点。创建免费的 DeepL API 密钥即可开始使用。",
     en: "Uses the DeepL API Free endpoint. Create a free DeepL API key to get started.",
-    ru: "Использует эндпоинт DeepL API Free. Для начала создайте бесплатный API-ключ DeepL."
+    fr: "Utilise l’endpoint DeepL API Free. Créez une clé API DeepL gratuite pour commencer.",
+    de: "Verwendet den DeepL-API-Free-Endpunkt. Erstellen Sie einen kostenlosen DeepL-API-Schlüssel, um zu beginnen.",
+    el: "Χρησιμοποιεί το endpoint του DeepL API Free. Δημιουργήστε ένα δωρεάν κλειδί API της DeepL για να ξεκινήσετε.",
+    he: "משתמש בנקודת הקצה של DeepL API Free. צרו מפתח API חינמי של DeepL כדי להתחיל.",
+    it: "Utilizza l’endpoint DeepL API Free. Crea una chiave API gratuita di DeepL per iniziare.",
+    ja: "DeepL API Free のエンドポイントを使用します。開始するには無料の DeepL API キーを作成してください。",
+    ko: "DeepL API Free 엔드포인트를 사용합니다. 시작하려면 무료 DeepL API 키를 만드세요.",
+    pt: "Usa o endpoint do DeepL API Free. Crie uma chave de API gratuita da DeepL para começar.",
+    ru: "Использует эндпоинт DeepL API Free. Для начала создайте бесплатный API-ключ DeepL.",
+    es: "Usa el endpoint de DeepL API Free. Crea una clave API gratuita de DeepL para empezar.",
+    th: "ใช้เอนด์พอยต์ DeepL API Free สร้างคีย์ API ฟรีจาก DeepL เพื่อเริ่มใช้งาน",
+    tr: "DeepL API Free uç noktasını kullanır. Başlamak için ücretsiz bir DeepL API anahtarı oluşturun.",
+    uk: "Використовує endpoint DeepL API Free. Створіть безкоштовний API-ключ DeepL, щоб почати."
   }
 };
 
