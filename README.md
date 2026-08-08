@@ -70,7 +70,7 @@ Subscription mode is opt-in and requires the separately downloaded [AI Translate
 - Build the Chrome Web Store archive with `node package-extension.mjs`. The generated package excludes the local bridge and its native setup files; do not upload the repository root directly.
 
 ## Privacy
-Selected text is sent only to the API endpoint you configure, or to the local bridge when optional subscription mode is enabled.
+Selected text and X posts or YouTube comments you request to translate are sent to the configured API endpoint, or to the local bridge when optional subscription mode is enabled. When automatic translation is enabled, visible X posts and YouTube comments are also sent for translation.
 See `PRIVACY_POLICY.md`.
 
 ## Contact
