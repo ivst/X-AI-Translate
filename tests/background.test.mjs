@@ -388,6 +388,16 @@ Object.assign(syncStore, {
 check(await call("translateText", "Hello"), "Subscription translation", "Claude subscription uses the bridge");
 check(subscriptionBodies.at(-1).model, "claude-subscription-model", "Claude subscription forwards the selected model");
 
+fetchMock = async (_url, init) => {
+  check(JSON.parse(init.body).provider, "openai", "Subscription model discovery targets the selected provider");
+  return jsonResponse({ ok: true, provider: "openai", models: ["gpt-5.6-sol"] });
+};
+check(
+  await call("getSubscriptionModels", "openai"),
+  { ok: true, provider: "openai", models: ["gpt-5.6-sol"] },
+  "Subscription model discovery uses the bridge"
+);
+
 Object.assign(syncStore, {
   provider: "openai",
   apiUrl: "https://api.openai.com/v1",

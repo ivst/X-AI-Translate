@@ -68,6 +68,10 @@ async function getSubscriptionStatus(provider) {
   return requestSubscriptionBridge("/v1/auth/status", { provider });
 }
 
+async function getSubscriptionModels(provider) {
+  return requestSubscriptionBridge("/v1/models", { provider });
+}
+
 async function startSubscriptionLogin(provider) {
   return requestSubscriptionBridge("/v1/auth/login", { provider });
 }
@@ -1273,6 +1277,12 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.action === "subscriptionModels" && supportsSubscription(message.provider)) {
+    getSubscriptionModels(message.provider)
+      .then((models) => sendResponse({ ok: true, ...models }))
+      .catch((err) => sendResponse({ ok: false, error: err.message || String(err) }));
+    return true;
+  }
   if (message?.action === "subscriptionStatus" && supportsSubscription(message.provider)) {
     getSubscriptionStatus(message.provider)
       .then((status) => sendResponse({ ok: true, ...status }))

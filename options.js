@@ -511,6 +511,10 @@ const DIRECT_PROVIDER_HINT_I18N = {
 };
 
 const SUBSCRIPTION_PROVIDERS = new Set(["openai", "claude"]);
+const SUBSCRIPTION_MODEL_FALLBACKS = {
+  openai: ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.2"],
+  claude: ["default", "sonnet", "opus", "haiku", "opusplan"]
+};
 const SUBSCRIPTION_HINT_I18N = {
   openai: {
     en: "Uses your ChatGPT plan through the local Codex bridge. The selected model is passed to Codex. API-key mode remains available.",
@@ -570,6 +574,23 @@ function sendSubscriptionMessage(action, provider) {
       resolve(response);
     });
   });
+}
+
+function refreshSubscriptionModels(provider) {
+  if (!supportsSubscription(provider) || currentAuthMode !== "subscription") return;
+  sendSubscriptionMessage("subscriptionModels", provider)
+    .then((data) => {
+      const models = Array.isArray(data.models) ? data.models.filter(Boolean) : [];
+      if (!models.length) return;
+      populateModels(
+        models,
+        modelSelect.value || modelCustomInput.value,
+        provider
+      );
+    })
+    .catch(() => {
+      // Keep the local subscription fallback list when the bridge cannot list models.
+    });
 }
 
 function setSubscriptionStatus(text, isError = false, connected = false) {
@@ -1000,8 +1021,11 @@ function applyProviderDefaults(provider, currentModel) {
     return;
   }
   apiUrlInput.value = preset.apiUrl || "";
+  const models = supportsSubscription(provider) && currentAuthMode === "subscription"
+    ? (SUBSCRIPTION_MODEL_FALLBACKS[provider] || preset.models)
+    : preset.models;
   populateModels(
-    preset.models,
+    models,
     currentModel,
     provider,
     supportsSubscription(provider) && currentAuthMode === "subscription"
@@ -1546,6 +1570,7 @@ chrome.storage.sync.get(defaultConfig, (data) => {
   applySetupNoteTranslations(uiLang);
   setProviderControls(providerSelect.value);
   refreshSubscriptionStatus(providerSelect.value);
+  refreshSubscriptionModels(providerSelect.value);
   document.getElementById("extVersion").textContent =
     "v" + chrome.runtime.getManifest().version;
   chrome.storage.local.get({ apiKeyByProvider: {}, apiKey: "" }, (localData) => {
@@ -1638,6 +1663,7 @@ providerSelect.addEventListener("change", () => {
   setYandexControlsVisible(provider === "yandexgpt");
   setProviderControls(provider);
   applySetupNoteTranslations(uiLangSelect.value);
+  refreshSubscriptionModels(provider);
   chrome.storage.sync.get(defaultConfig, (data) => {
     chrome.storage.local.get({ apiKeyByProvider: {}, apiKey: "" }, (localData) => {
       savedCustomApiUrl = data.customApiUrl || savedCustomApiUrl;
@@ -1659,6 +1685,7 @@ providerSelect.addEventListener("change", () => {
       setProviderControls(provider);
       applySetupNoteTranslations(uiLangSelect.value);
       refreshSubscriptionStatus(provider);
+      refreshSubscriptionModels(provider);
       apiKeyInput.value = getKeyByProviderFromStore(provider, data, localData, Boolean(data.syncApiKeys));
       yandexFolderInput.value = data.yandexFolderId || defaultConfig.yandexFolderId;
       if (provider === "openai" && apiKeyInput.value.trim()) {
@@ -1733,6 +1760,7 @@ authModeInputs.forEach((input) => {
     applySetupNoteTranslations(uiLangSelect.value);
     if (currentAuthMode === "subscription") {
       refreshSubscriptionStatus(providerSelect.value);
+      refreshSubscriptionModels(providerSelect.value);
     }
   });
 });
