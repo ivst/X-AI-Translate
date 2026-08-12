@@ -918,7 +918,7 @@ async function streamSubscriptionTranslation(text, config, targetLang, sourceLan
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         provider: config.provider,
-        model: usesSubscriptionAuth(config) ? "" : resolveModelForProvider(config),
+        model: resolveModelForProvider(config),
         text,
         targetLang,
         sourceLang

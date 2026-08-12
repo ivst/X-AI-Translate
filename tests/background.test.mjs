@@ -363,7 +363,38 @@ const claudeUpdates = [];
 await call("streamTranslate", "Hello", (text, done) => claudeUpdates.push({ text, done }));
 check(claudeUpdates.at(-1), { text: "Salut", done: true }, "Claude SSE completes with final text");
 
-Object.assign(syncStore, { provider: "openai", apiUrl: "https://api.openai.com/v1", model: "idle-model" });
+const subscriptionBodies = [];
+fetchMock = async (_url, init) => {
+  subscriptionBodies.push(JSON.parse(init.body));
+  return new Response('{"type":"done","text":"Subscription translation"}\n', {
+    status: 200,
+    headers: { "content-type": "application/x-ndjson" }
+  });
+};
+Object.assign(syncStore, {
+  provider: "openai",
+  authMode: "subscription",
+  authModeByProvider: { openai: "subscription" },
+  model: "gpt-subscription-model"
+});
+check(await call("translateText", "Hello"), "Subscription translation", "Subscription translation uses the bridge");
+check(subscriptionBodies.at(-1).model, "gpt-subscription-model", "OpenAI subscription forwards the selected model");
+
+Object.assign(syncStore, {
+  provider: "claude",
+  authModeByProvider: { claude: "subscription" },
+  model: "claude-subscription-model"
+});
+check(await call("translateText", "Hello"), "Subscription translation", "Claude subscription uses the bridge");
+check(subscriptionBodies.at(-1).model, "claude-subscription-model", "Claude subscription forwards the selected model");
+
+Object.assign(syncStore, {
+  provider: "openai",
+  apiUrl: "https://api.openai.com/v1",
+  model: "idle-model",
+  authMode: "apiKey",
+  authModeByProvider: { openai: "apiKey" }
+});
 fetchMock = async () => new Response(
   new ReadableStream({ start() {}, cancel() {} }),
   { status: 200, headers: { "content-type": "text/event-stream" } }

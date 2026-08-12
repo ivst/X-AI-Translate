@@ -513,12 +513,12 @@ const DIRECT_PROVIDER_HINT_I18N = {
 const SUBSCRIPTION_PROVIDERS = new Set(["openai", "claude"]);
 const SUBSCRIPTION_HINT_I18N = {
   openai: {
-    en: "Uses your ChatGPT plan through the local Codex bridge. API-key mode remains available.",
-    ru: "Использует ваш план ChatGPT через локальный bridge Codex. Режим API-ключа остаётся доступным."
+    en: "Uses your ChatGPT plan through the local Codex bridge. The selected model is passed to Codex. API-key mode remains available.",
+    ru: "Использует ваш план ChatGPT через локальный bridge Codex. Выбранная модель передаётся в Codex. Режим API-ключа остаётся доступным."
   },
   claude: {
-    en: "Uses your Claude Pro/Max plan through the local Claude Code bridge. API-key mode remains available.",
-    ru: "Использует ваш план Claude Pro/Max через локальный bridge Claude Code. Режим API-ключа остаётся доступным."
+    en: "Uses your Claude Pro/Max plan through the local Claude Code bridge. The selected model is passed to Claude Code. API-key mode remains available.",
+    ru: "Использует ваш план Claude Pro/Max через локальный bridge Claude Code. Выбранная модель передаётся в Claude Code. Режим API-ключа остаётся доступным."
   }
 };
 const SUBSCRIPTION_SETUP_NOTE_I18N = {
@@ -911,11 +911,19 @@ function getModelLabel(modelId, provider) {
   return modelId;
 }
 
-function populateModels(models, selected, provider = providerSelect.value) {
+function populateModels(
+  models,
+  selected,
+  provider = providerSelect.value,
+  preserveUnknownSelection = false
+) {
   modelSelect.innerHTML = "";
   const hasModels = models.length > 0;
   if (hasModels) {
-    models.forEach((model) => {
+    const availableModels = preserveUnknownSelection && selected && !models.includes(selected)
+      ? [selected, ...models]
+      : models;
+    availableModels.forEach((model) => {
       const option = document.createElement("option");
       option.value = model;
       option.textContent = getModelLabel(model, provider);
@@ -960,7 +968,7 @@ function setProviderControls(provider) {
   apiKeyControl.style.display = preset.requiresApiKey === false || subscriptionSelected
     ? "none"
     : "block";
-  modelControl.style.display = isDirect || subscriptionSelected ? "none" : "block";
+  modelControl.style.display = isDirect ? "none" : "block";
   deepseekControls.style.display = provider === "deepseek" ? "block" : "none";
   authModeControl.style.display = subscriptionSupported ? "block" : "none";
   subscriptionControls.style.display = subscriptionSelected ? "block" : "none";
@@ -992,7 +1000,12 @@ function applyProviderDefaults(provider, currentModel) {
     return;
   }
   apiUrlInput.value = preset.apiUrl || "";
-  populateModels(preset.models, currentModel);
+  populateModels(
+    preset.models,
+    currentModel,
+    provider,
+    supportsSubscription(provider) && currentAuthMode === "subscription"
+  );
   setProviderControls(provider);
 }
 
@@ -1633,6 +1646,12 @@ providerSelect.addEventListener("change", () => {
       currentAuthMode = savedAuthModes[provider] === "subscription"
         ? "subscription"
         : getAuthModeForProvider(data, provider);
+      applyProviderDefaults(
+        provider,
+        provider === "custom"
+          ? (data.customModel || savedCustomModel)
+          : (data.model || defaultConfig.model)
+      );
       if (provider === "custom") {
         apiUrlInput.value = savedCustomApiUrl || "";
         modelCustomInput.value = savedCustomModel || "";

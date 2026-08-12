@@ -57,7 +57,7 @@ Chrome extension for translating selected text, X (Twitter) posts, and YouTube c
 
 ## Subscription mode
 
-Subscription mode is opt-in and requires the separately downloaded [AI Translate Bridge](https://github.com/ivst/X-AI-Translate-Bridge) plus the authenticated provider CLI. Install the bridge bundle, then choose Subscription in Settings. Gemini and all other providers continue to use their existing API-key flow.
+Subscription mode is opt-in and requires the separately downloaded [AI Translate Bridge](https://github.com/ivst/X-AI-Translate-Bridge) plus the authenticated provider CLI. Install the bridge bundle, then choose Subscription in Settings. The model selector remains available for OpenAI and Claude, and the selected model is passed to the corresponding CLI. Gemini and all other providers continue to use their existing API-key flow.
 
 ## Permissions
 - The content script runs on `<all_urls>` to detect text selections and render inline translation UI where supported.
