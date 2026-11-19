@@ -1323,7 +1323,7 @@ async function refreshProviderModels({ force = false, showStatus = false } = {})
   } catch (err) {
     if (!isCurrent()) return;
     // Preserve the selected model and the existing list after a temporary API failure.
-    if (showStatus || provider === "openrouter") setStatus(err.message || String(err), true);
+    if (showStatus) setStatus(err.message || String(err), true);
   }
 }
 

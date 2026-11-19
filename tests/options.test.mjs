@@ -290,3 +290,33 @@ test("empty OpenRouter free-only catalog offers only its known free preset", asy
   await el("save").fire("click");
   assert.equal(sync.model, "openrouter/free");
 });
+
+test("failed silent OpenRouter refresh preserves save status but manual refresh reports errors", async () => {
+  const { el, local, fetches, select, sync } = await makeOptions();
+  local.apiKeyByProvider.openrouter = "router-key";
+  await select("openrouter");
+  const initial = await waitForFetch(fetches, () => true);
+  initial.resolve(new Response(JSON.stringify({ data: [
+    { id: "openrouter/free", pricing: { prompt: "0", completion: "0" } }
+  ] })));
+  await tick();
+
+  await el("save").fire("click");
+  assert.equal(sync.provider, "openrouter");
+  assert.equal(el("status").textContent, "Saved.");
+  const savedColor = el("status").style.color;
+  const silent = await waitForFetch(fetches, (request) => request !== initial);
+  silent.resolve(new Response("Service unavailable", { status: 503 }));
+  await tick();
+  assert.equal(el("status").textContent, "Saved.");
+  assert.equal(el("status").style.color, savedColor);
+  assert.equal(el("model").value, "openrouter/free");
+
+  el("refreshOpenrouter").fire("click");
+  const manual = await waitForFetch(fetches, (request) => request !== initial && request !== silent);
+  manual.reject(new Error("Network unavailable"));
+  await tick();
+  assert.equal(el("status").textContent, "Network unavailable");
+  assert.notEqual(el("status").style.color, savedColor);
+  assert.equal(el("model").value, "openrouter/free");
+});
