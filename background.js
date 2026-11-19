@@ -1170,7 +1170,7 @@ function saveLastTranslation(text, isError) {
   const payload = isError
     ? { lastError: text }
     : { lastTranslation: text, lastError: "" };
-  chrome.storage.local.set(payload);
+  return chrome.storage.local.set(payload);
 }
 
 function showTranslatingState(tabId, requestId) {
@@ -1235,6 +1235,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.action === "getContentConfig" && sender.tab?.id != null) {
     getContentConfig()
       .then((config) => sendResponse({ ok: true, config }))
+      .catch(() => sendResponse({ ok: false }));
+    return true;
+  }
+  if (message?.action === "recordLocalTranslation" && sender.tab?.id != null
+      && sender.id === chrome.runtime.id) {
+    if (typeof message.text !== "string" || !message.text.trim() || typeof message.error !== "boolean") {
+      sendResponse({ ok: false });
+      return;
+    }
+    // Manual Chrome translations finish inside the content document. Keep
+    // the same last-result/error behavior without starting another translation.
+    storageAccessReady
+      .then(() => saveLastTranslation(message.error ? `Error: ${message.text}` : message.text, message.error))
+      .then(() => sendResponse({ ok: true }))
       .catch(() => sendResponse({ ok: false }));
     return true;
   }

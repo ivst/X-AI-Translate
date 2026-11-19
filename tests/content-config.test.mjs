@@ -182,3 +182,171 @@ test("same-script foreign language detection controls inline buttons and waits f
   await new Promise(resolve => setImmediate(resolve));
   assert.ok(container.querySelector(".ai-translate-btn"), "German text is offered for translation into English");
 });
+
+function manualTranslationHarness(config = {}) {
+  const requests = [];
+  const timers = new Map();
+  const documentEvents = {};
+  const activation = { isActive: false };
+  const translations = [];
+  let timerId = 0;
+  let intersection;
+  function element() {
+    const classes = new Set();
+    return {
+      style: {}, dataset: {}, children: [], events: {}, isConnected: true,
+      classList: {
+        add(name) { classes.add(name); }, remove(name) { classes.delete(name); },
+        contains(name) { return classes.has(name); }
+      },
+      addEventListener(name, listener) { this.events[name] = listener; },
+      appendChild(node) { this.children.push(node); node.parentElement = this; },
+      removeChild(node) { this.children.splice(this.children.indexOf(node), 1); node.parentElement = null; },
+      remove() { this.parentElement?.removeChild(this); },
+      querySelectorAll(selector) {
+        return this.children.filter(node => selector === "[data-ai-translate]"
+          ? node.dataset.aiTranslate : `.${node.className}` === selector);
+      },
+      querySelector(selector) { return this.querySelectorAll(selector)[0] || null; }
+    };
+  }
+  const container = element();
+  const body = element();
+  const tweet = {
+    textContent: "こんにちは世界", isConnected: true, parentElement: container,
+    closest(selector) { return selector === '[data-testid="tweetText"]' ? this : null; }
+  };
+  const context = vm.createContext({
+    chrome: { runtime: {
+      id: "extension", lastError: null, onMessage: { addListener() {} },
+      getURL: path => path,
+      sendMessage(message, callback) {
+        requests.push(message);
+        // Simulate losing the gesture on a cold worker round trip.
+        if (message.action === "translateStream") activation.isActive = false;
+        if (message.action !== "getContentConfig") callback?.({ ok: true });
+        else callback({ ok: true, config: {
+          provider: "chrome", sourceLang: "ja", targetLang: "en", selectionShortcut: true, ...config
+        } });
+      }
+    } },
+    navigator: { userActivation: activation },
+    Translator: {
+      async availability() { return "downloadable"; },
+      async create(options) {
+        assert.equal(activation.isActive, true, "create must retain the click's activation");
+        const translation = { options };
+        options.monitor({ addEventListener(_event, listener) { translation.progress = listener; } });
+        translations.push(translation);
+        return {
+          translate(text) {
+            translation.text = text;
+            return new Promise((resolve, reject) => Object.assign(translation, { resolve, reject }));
+          },
+          destroy() { translation.destroyed = true; }
+        };
+      }
+    },
+    window: {
+      location: { hostname: "x.com" }, innerWidth: 1000, addEventListener() {},
+      getSelection: () => ({
+        toString: () => tweet.textContent, rangeCount: 1,
+        getRangeAt: () => ({ getClientRects: () => [{ width: 100, right: 200, top: 100 }] })
+      }),
+      IntersectionObserver: class {
+        constructor(callback) { intersection = callback; }
+        observe() {} unobserve() {} disconnect() {}
+      }
+    },
+    document: {
+      body, documentElement: {}, createElement: element, getElementById: () => null,
+      addEventListener(name, callback) { documentEvents[name] = callback; },
+      querySelectorAll() { return [tweet]; }
+    },
+    MutationObserver: class { observe() {} disconnect() {} },
+    setTimeout(callback, delay) { timers.set(++timerId, { callback, delay }); return timerId; },
+    clearTimeout(id) { timers.delete(id); }
+  });
+  vm.runInContext(languageSource, context);
+  vm.runInContext(source, context);
+  const click = node => { activation.isActive = true; node.events.click(); };
+  const selection = () => {
+    documentEvents.selectionchange();
+    [...timers.values()].find(timer => timer.delay === 80).callback();
+    return body.querySelector(".ai-translate-selection-btn");
+  };
+  return {
+    requests, translations, container, body, click, selection,
+    makeVisible: () => intersection([{ target: tweet, isIntersecting: true }]),
+    expire: () => [...timers.values()].find(timer => timer.delay === 45000).callback()
+  };
+}
+const settleTranslation = () => new Promise(resolve => setImmediate(resolve));
+
+test("manual inline Chrome translation starts locally, reports progress and only saves the final result", async () => {
+  const h = manualTranslationHarness();
+  const button = h.container.querySelector(".ai-translate-btn");
+  const result = h.container.querySelector(".ai-translate-result");
+  h.click(button);
+  await settleTranslation();
+  const translation = h.translations[0];
+  assert.equal(translation.options.sourceLanguage, "ja");
+  assert.equal(translation.options.targetLanguage, "en");
+  assert.equal(translation.text, "こんにちは世界");
+  assert.equal(h.requests.length, 1, "no worker request before or during local translation");
+  translation.progress({ loaded: 0.5 });
+  assert.equal(result.textContent, "Translating... 50%");
+  assert.equal(h.requests.length, 1, "progress does not persist history");
+  translation.resolve("Hello world");
+  await settleTranslation();
+  assert.equal(result.textContent, "Hello world");
+  assert.equal(button.textContent, "Done");
+  assert.equal(translation.destroyed, true);
+  assert.deepEqual(JSON.parse(JSON.stringify(h.requests.at(-1))), {
+    action: "recordLocalTranslation", text: "Hello world", error: false
+  });
+});
+
+test("manual selection Chrome translation starts locally and displays and records errors", async () => {
+  const h = manualTranslationHarness();
+  const button = h.selection();
+  h.click(button);
+  await settleTranslation();
+  const translation = h.translations[0];
+  const overlay = h.body.querySelector(".ai-translate-overlay").querySelector(".ai-translate-overlay-content");
+  translation.progress({ loaded: 0.25 });
+  assert.equal(overlay.textContent, "Translating... 25%");
+  assert.equal(h.requests.length, 1);
+  translation.reject(new Error("Unsupported pair"));
+  await settleTranslation();
+  assert.equal(overlay.textContent, "Error: Unsupported pair");
+  assert.equal(button.classList.contains("ai-translate-loading"), false);
+  assert.deepEqual(JSON.parse(JSON.stringify(h.requests.at(-1))), {
+    action: "recordLocalTranslation", text: "Unsupported pair", error: true
+  });
+  assert.equal(h.requests.some(request => request.action === "translateStream"), false, "no cloud fallback");
+});
+
+test("late local results do not replace the timeout or persist stale history", async () => {
+  const h = manualTranslationHarness();
+  h.click(h.container.querySelector(".ai-translate-btn"));
+  await settleTranslation();
+  h.expire();
+  h.translations[0].resolve("Late");
+  await settleTranslation();
+  assert.equal(h.container.querySelector(".ai-translate-result").textContent, "Error: timeout");
+  assert.equal(h.requests.length, 1);
+});
+
+test("automatic Chrome and manual cloud translations still use the worker", async () => {
+  const automatic = manualTranslationHarness({ enableXAutoTranslation: true });
+  automatic.makeVisible();
+  assert.equal(automatic.requests.at(-1).action, "translateStream");
+  assert.equal(automatic.translations.length, 0);
+  const cloud = manualTranslationHarness({ provider: "googletranslate" });
+  cloud.click(cloud.container.querySelector(".ai-translate-btn"));
+  assert.equal(cloud.requests.at(-1).action, "translateStream");
+  cloud.click(cloud.selection());
+  assert.equal(cloud.requests.at(-1).action, "translateStream");
+  assert.equal(cloud.translations.length, 0);
+});

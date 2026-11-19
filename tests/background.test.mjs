@@ -58,6 +58,7 @@ const chrome = {
   },
   notifications: { create() {} },
   runtime: {
+    id: "extension",
     lastError: null,
     onInstalled: chromeEvent("installed"),
     onMessage: chromeEvent("message")
@@ -643,6 +644,26 @@ check(localRequest.tabId, 42, "Chrome provider routes to the originating tab");
 check(localRequest.message.action, "translateLocally", "Chrome provider uses the document bridge");
 check(localRequest.options.frameId, 0, "Chrome provider targets the main frame");
 check(localUpdates, [{ text: "On-device", done: true }], "Local provider completes stream");
+const historySender = { id: "extension", tab: { id: 42 } };
+const recordHistory = (text, error) => new Promise(resolve => {
+  check(listeners.message({ action: "recordLocalTranslation", text, error }, historySender, resolve),
+    true, "Local result storage keeps response channel open");
+});
+check((await recordHistory("Manual result", false)).ok, true, "Manual local result acknowledged");
+check(localStore.lastTranslation, "Manual result", "Manual local translation is saved");
+check(localStore.lastError, "", "Manual success clears previous errors");
+check((await recordHistory("Unsupported pair", true)).ok, true, "Manual local error acknowledged");
+check(localStore.lastError, "Error: Unsupported pair", "Manual local error is saved");
+check(localStore.lastTranslation, "Manual result", "Errors preserve the last successful translation");
+check(localStore.translationCacheV1.length, 0, "Manual local results bypass the translation cache");
+check(listeners.message({ action: "recordLocalTranslation", text: "invalid", error: false }, { id: "extension" }, () => {}),
+  undefined, "History reporting requires a content tab");
+check(listeners.message({ action: "recordLocalTranslation", text: "invalid", error: false }, { id: "other", tab: { id: 42 } }, () => {}),
+  undefined, "History reporting requires the extension sender");
+let invalidHistoryResponse;
+listeners.message({ action: "recordLocalTranslation", text: {}, error: false }, historySender, response => { invalidHistoryResponse = response; });
+check(invalidHistoryResponse.ok, false, "Malformed history message is rejected");
+check(localStore.lastTranslation, "Manual result", "Invalid history messages cannot overwrite history");
 chrome.tabs.sendMessage = (_id, _message, _options, callback) => callback({ ok: false, error: "Unsupported pair" });
 await assert.rejects(call("streamTranslate", "original", () => {}, { tabId: 42 }), /Unsupported pair/);
 assertions++;

@@ -246,6 +246,33 @@ function armInlineStreamTimeout(requestId) {
   }, INLINE_STREAM_TIMEOUT_MS);
 }
 
+// Start in the document that received the click, without a service-worker
+// round trip before Translator.create() checks transient user activation.
+async function startManualLocalTranslation(request, isActive, strings) {
+  const { requestId, target, text, sourceLang, targetLang } = request;
+  const update = (text, done, error = false) => {
+    if (!isActive()) return;
+    const displayText = error && target === "overlay" ? `${strings.errorPrefix}: ${text}` : text;
+    applyStreamUpdate({ requestId, target, text: displayText, done, error });
+    if (done) {
+      // Only the worker may write translation history. No source text is sent.
+      sendMessageSafe({ action: "recordLocalTranslation", text, error });
+    }
+  };
+  try {
+    if (!isExtensionContextValid() || !globalThis.AITranslateLanguage) {
+      throw new Error("Local translation is unavailable. Reload this page or use Quick Translate in the popup.");
+    }
+    const translated = await globalThis.AITranslateLanguage.translateLocally(
+      text, sourceLang, targetLang,
+      (progress) => update(`${strings.buttonLoading} ${Math.round(progress * 100)}%`, false)
+    );
+    update(translated, true);
+  } catch (err) {
+    update(err.message || String(err), true, true);
+  }
+}
+
 function ensureSelectionButton() {
   if (selectionButton) return selectionButton;
   const btn = document.createElement("button");
@@ -274,14 +301,19 @@ function ensureSelectionButton() {
     const requestId = `selection-${Date.now()}-${streamSeq++}`;
     activeSelectionRequestId = requestId;
     armSelectionTimeout(requestId, strings);
-    const sent = sendMessageSafe({
+    const request = {
       action: "translateStream",
       requestId,
       target: "overlay",
       text,
       sourceLang: currentConfig.sourceLang || "auto",
       targetLang: currentConfig.targetLang || "en"
-    }, (err) => {
+    };
+    if (currentConfig.provider === "chrome") {
+      startManualLocalTranslation(request, () => activeSelectionRequestId === requestId, strings);
+      return;
+    }
+    const sent = sendMessageSafe(request, (err) => {
       if (!err || activeSelectionRequestId !== requestId) return;
       clearSelectionStreamState();
       showGlobalOverlay(formatActionableError(strings, err), true);
@@ -696,14 +728,19 @@ function startInlineTranslation(el, btn, result, strings, options = {}) {
     onComplete: options.onComplete || null
   });
   armInlineStreamTimeout(requestId);
-  const sent = sendMessageSafe({
+  const request = {
     action: "translateStream",
     requestId,
     target: "inline",
     text: textToTranslate,
     sourceLang: currentConfig.sourceLang || "auto",
     targetLang: currentConfig.targetLang || "en"
-  }, (err) => {
+  };
+  if (options.manual && currentConfig.provider === "chrome") {
+    startManualLocalTranslation(request, () => inlineStreams.has(requestId), strings);
+    return true;
+  }
+  const sent = sendMessageSafe(request, (err) => {
     if (!err) return;
     const entry = inlineStreams.get(requestId);
     if (!entry) return;
@@ -803,7 +840,7 @@ function enhanceInlineText(el) {
   if (btn) {
     btn.textContent = strings.buttonIdle;
     btn.addEventListener("click", () => {
-      startInlineTranslation(el, btn, result, strings);
+      startInlineTranslation(el, btn, result, strings, { manual: true });
     });
     container.appendChild(btn);
   }
@@ -1027,6 +1064,46 @@ function showGlobalOverlay(text, finalize) {
   }
 }
 
+function applyStreamUpdate({ requestId, target, text, done, error }) {
+  if (target === "overlay") {
+    if (requestId && text === "Translating..." && !done) {
+      startOverlayLoadingAnimation(requestId);
+      return;
+    }
+    if (requestId && overlayLoadingRequestId && requestId === overlayLoadingRequestId) {
+      stopOverlayLoadingAnimation();
+    }
+    showGlobalOverlay(text, Boolean(done));
+    if (requestId && requestId === activeSelectionRequestId) {
+      if (done) {
+        clearSelectionStreamState();
+      } else {
+        const strings = getLocaleStrings(currentConfig.uiLang || currentConfig.targetLang);
+        armSelectionTimeout(requestId, strings);
+      }
+    }
+    return;
+  }
+  if (target === "inline" && requestId) {
+    const entry = inlineStreams.get(requestId);
+    if (!entry) return;
+    const { result, btn, strings } = entry;
+    armInlineStreamTimeout(requestId);
+    result.textContent = text || "";
+    result.style.display = "block";
+    if (done) {
+      if (btn) {
+        btn.classList.remove(TRANSLATE_LOADING_CLASS);
+        btn.textContent = error ? strings.buttonIdle : strings.buttonDone;
+      }
+      if (error) {
+        result.textContent = `${strings.errorPrefix}: ${text}`;
+      }
+      clearInlineStreamState(requestId, !error);
+    }
+  }
+}
+
 function refreshContentConfig(endpointChanged = false) {
   endpointRefreshPending ||= endpointChanged;
   const generation = ++configRequestGeneration;
@@ -1081,44 +1158,7 @@ if (isExtensionContextValid()) {
         showGlobalOverlay(message.text, true);
       }
       if (message?.action === "streamUpdate") {
-        const { requestId, target, text, done, error } = message;
-        if (target === "overlay") {
-          if (requestId && text === "Translating..." && !done) {
-            startOverlayLoadingAnimation(requestId);
-            return;
-          }
-          if (requestId && overlayLoadingRequestId && requestId === overlayLoadingRequestId) {
-            stopOverlayLoadingAnimation();
-          }
-          showGlobalOverlay(text, Boolean(done));
-          if (requestId && requestId === activeSelectionRequestId) {
-            if (done) {
-              clearSelectionStreamState();
-            } else {
-              const strings = getLocaleStrings(currentConfig.uiLang || currentConfig.targetLang);
-              armSelectionTimeout(requestId, strings);
-            }
-          }
-          return;
-        }
-        if (target === "inline" && requestId) {
-          const entry = inlineStreams.get(requestId);
-          if (!entry) return;
-          const { result, btn, strings } = entry;
-          armInlineStreamTimeout(requestId);
-          result.textContent = text || "";
-          result.style.display = "block";
-          if (done) {
-            if (btn) {
-              btn.classList.remove(TRANSLATE_LOADING_CLASS);
-              btn.textContent = strings.buttonDone;
-            }
-            if (error) {
-              result.textContent = `${strings.errorPrefix}: ${text}`;
-            }
-            clearInlineStreamState(requestId, !error);
-          }
-        }
+        applyStreamUpdate(message);
       }
     });
 
