@@ -3,7 +3,8 @@
   apiUrl: "https://translate.googleapis.com",
   apiKey: "",
   apiKeyByProvider: {},
-  model: "gpt-4o-mini",
+  model: "gpt-6-luna",
+  modelByProvider: {},
   targetLang: "en",
   sourceLang: "auto",
   uiLang: "en",
@@ -23,30 +24,17 @@
   customModel: ""
 };
 
-const DEEPSEEK_LEGACY_MODEL_CONFIG = {
-  "deepseek-chat": {
-    model: "deepseek-v4-flash",
-    thinkingEnabled: false
-  },
-  "deepseek-reasoner": {
-    model: "deepseek-v4-flash",
-    thinkingEnabled: true
+async function migrateLegacyModelConfig(config) {
+  const migrated = migrateModelConfig(config);
+  if (migrated === config) return config;
+  try {
+    const current = await chrome.storage.sync.get({ provider: "", model: "" });
+    if (current.provider === config.provider && current.model === config.model) {
+      await chrome.storage.sync.set(modelMigrationPatch(config, migrated));
+    }
+  } catch (_) {
+    // The migrated selection remains usable if syncing fails.
   }
-};
-
-function migrateLegacyDeepSeekConfig(config) {
-  if (config.provider !== "deepseek") return config;
-  const migration = DEEPSEEK_LEGACY_MODEL_CONFIG[config.model];
-  if (!migration) return config;
-  const migrated = {
-    ...config,
-    model: migration.model,
-    deepseekThinkingEnabled: migration.thinkingEnabled
-  };
-  chrome.storage.sync.set({
-    model: migrated.model,
-    deepseekThinkingEnabled: migrated.deepseekThinkingEnabled
-  });
   return migrated;
 }
 
@@ -54,22 +42,22 @@ const PROVIDERS = {
   openai: {
     label: "OpenAI",
     apiUrl: "https://api.openai.com/v1",
-    models: ["gpt-4o-mini", "gpt-4o"]
+    models: MODEL_PRESETS.openai
   },
   claude: {
     label: "Claude",
     apiUrl: "https://api.anthropic.com",
-    models: ["claude-3-5-haiku-latest", "claude-3-7-sonnet-latest"]
+    models: MODEL_PRESETS.claude
   },
   gemini: {
     label: "Gemini",
     apiUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
-    models: ["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-pro"]
+    models: MODEL_PRESETS.gemini
   },
   deepseek: {
     label: "DeepSeek",
     apiUrl: "https://api.deepseek.com",
-    models: ["deepseek-v4-flash", "deepseek-v4-pro"]
+    models: MODEL_PRESETS.deepseek
   },
   googletranslate: {
     label: "Google Translate (free)",
@@ -93,11 +81,7 @@ const PROVIDERS = {
   openrouter: {
     label: "OpenRouter",
     apiUrl: "https://openrouter.ai/api/v1",
-    models: [
-      "qwen/qwen-2.5-7b-instruct",
-      "qwen/qwen-2.5-coder-7b-instruct",
-      "deepseek/deepseek-r1-distill-llama-70b"
-    ]
+    models: MODEL_PRESETS.openrouter
   },
   custom: {
     label: "Custom",
@@ -153,19 +137,33 @@ const syncApiKeysHelp = document.getElementById("syncApiKeysHelp");
 
 let savedCustomApiUrl = "";
 let savedCustomModel = "";
+let savedModelsByProvider = {};
+let storedSyncApiKeys = false;
+let settingsBusy = true;
+let providerGeneration = 0;
+let modelRequestGeneration = 0;
+let displayedProvider = null;
+const saveButton = document.getElementById("save");
+saveButton.disabled = true;
+providerSelect.disabled = true;
+syncApiKeysCheckbox.disabled = true;
 
-const OPENROUTER_CACHE_KEY = "openrouter_models_cache";
+const OPENROUTER_CACHE_KEY = "openrouter_models_cache_v2";
 const OPENROUTER_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-const OPENAI_CACHE_KEY = "openai_models_cache";
+const OPENAI_CACHE_KEY = "openai_models_cache_v2";
 const OPENAI_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-const DEEPSEEK_CACHE_KEY = "deepseek_models_cache";
+const DEEPSEEK_CACHE_KEY = "deepseek_models_cache_v2";
 const DEEPSEEK_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-const CLAUDE_CACHE_KEY = "claude_models_cache";
+const CLAUDE_CACHE_KEY = "claude_models_cache_v2";
 const CLAUDE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-const GEMINI_CACHE_KEY = "gemini_models_cache";
+const GEMINI_CACHE_KEY = "gemini_models_cache_v2";
 const GEMINI_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const YANDEX_CACHE_KEY = "yandex_models_cache";
 const YANDEX_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
+function fetchModelCatalog(url, options) {
+  return fetch(url, { ...options, signal: AbortSignal.timeout(15000) });
+}
 
 const SETUP_NOTE_I18N = {
   ar: {
@@ -562,85 +560,50 @@ function includeLegacyKey(keyMap, legacyKey, provider) {
   return migrated;
 }
 
-function migrateLegacyKeyData(syncData, localData) {
+async function migrateLegacyKeyData(syncData, localData) {
   const provider = syncData.provider || defaultConfig.provider;
   const rawSyncMap = { ...(syncData.apiKeyByProvider || {}) };
   const rawLocalMap = { ...(localData.apiKeyByProvider || {}) };
   const hasMappedKeys = Object.keys(rawSyncMap).length > 0 || Object.keys(rawLocalMap).length > 0;
-  const syncMap = hasMappedKeys
-    ? rawSyncMap
-    : includeLegacyKey(rawSyncMap, syncData.apiKey, provider);
-  const localMap = hasMappedKeys
-    ? rawLocalMap
-    : includeLegacyKey(rawLocalMap, localData.apiKey, provider);
-
+  const syncMap = hasMappedKeys ? rawSyncMap : includeLegacyKey(rawSyncMap, syncData.apiKey, provider);
+  const localMap = hasMappedKeys ? rawLocalMap : includeLegacyKey(rawLocalMap, localData.apiKey, provider);
   if (syncData.syncApiKeys) {
     const mergedSyncMap = { ...localMap, ...syncMap };
-    chrome.storage.sync.set({ apiKeyByProvider: mergedSyncMap, apiKey: "" });
-    chrome.storage.local.set({ apiKeyByProvider: {}, apiKey: "" });
+    await chrome.storage.sync.set({ apiKeyByProvider: mergedSyncMap, apiKey: "" });
+    await chrome.storage.local.set({ apiKeyByProvider: {}, apiKey: "" });
     return {
       syncData: { ...syncData, apiKeyByProvider: mergedSyncMap, apiKey: "" },
       localData: { ...localData, apiKeyByProvider: {}, apiKey: "" }
     };
   }
-
   const mergedLocalMap = { ...syncMap, ...localMap };
-  chrome.storage.local.set({ apiKeyByProvider: mergedLocalMap, apiKey: "" });
-  chrome.storage.sync.set({ apiKeyByProvider: {}, apiKey: "" });
+  await chrome.storage.local.set({ apiKeyByProvider: mergedLocalMap, apiKey: "" });
+  await chrome.storage.sync.set({ apiKeyByProvider: {}, apiKey: "" });
   return {
     syncData: { ...syncData, apiKeyByProvider: {}, apiKey: "" },
     localData: { ...localData, apiKeyByProvider: mergedLocalMap, apiKey: "" }
   };
 }
 
-function migrateKeyStorage(useSyncKeys, currentProvider, done) {
-  chrome.storage.sync.get({ apiKeyByProvider: {}, apiKey: "" }, (syncData) => {
-    chrome.storage.local.get({ apiKeyByProvider: {}, apiKey: "" }, (localData) => {
-      const syncMap = { ...(syncData.apiKeyByProvider || {}) };
-      const localMap = { ...(localData.apiKeyByProvider || {}) };
-      const hasMappedKeys = Object.keys(syncMap).length > 0 || Object.keys(localMap).length > 0;
-      const migratedSyncMap = hasMappedKeys
-        ? syncMap
-        : includeLegacyKey(syncMap, syncData.apiKey, currentProvider);
-      const migratedLocalMap = hasMappedKeys
-        ? localMap
-        : includeLegacyKey(localMap, localData.apiKey, currentProvider);
-      if (useSyncKeys) {
-        const nextSyncMap = { ...migratedLocalMap, ...migratedSyncMap };
-        chrome.storage.sync.set(
-          {
-            syncApiKeys: true,
-            apiKeyByProvider: nextSyncMap,
-            apiKey: ""
-          },
-          () => {
-            chrome.storage.local.set(
-              { apiKeyByProvider: {}, apiKey: "" },
-              () => done?.()
-            );
-          }
-        );
-        return;
-      }
-      const nextLocalMap = { ...migratedLocalMap, ...migratedSyncMap };
-      chrome.storage.local.set(
-        {
-          apiKeyByProvider: nextLocalMap,
-          apiKey: ""
-        },
-        () => {
-          chrome.storage.sync.set(
-            {
-              syncApiKeys: false,
-              apiKeyByProvider: {},
-              apiKey: ""
-            },
-            () => done?.()
-          );
-        }
-      );
-    });
-  });
+async function migrateKeyStorage(useSyncKeys, currentProvider, done) {
+  const [syncData, localData] = await Promise.all([
+    chrome.storage.sync.get({ apiKeyByProvider: {}, apiKey: "" }),
+    chrome.storage.local.get({ apiKeyByProvider: {}, apiKey: "" })
+  ]);
+  const syncMap = { ...(syncData.apiKeyByProvider || {}) };
+  const localMap = { ...(localData.apiKeyByProvider || {}) };
+  const hasMappedKeys = Object.keys(syncMap).length > 0 || Object.keys(localMap).length > 0;
+  const migratedSyncMap = hasMappedKeys ? syncMap : includeLegacyKey(syncMap, syncData.apiKey, currentProvider);
+  const migratedLocalMap = hasMappedKeys ? localMap : includeLegacyKey(localMap, localData.apiKey, currentProvider);
+  const nextMap = { ...migratedLocalMap, ...migratedSyncMap };
+  if (useSyncKeys) {
+    await chrome.storage.sync.set({ syncApiKeys: true, apiKeyByProvider: nextMap, apiKey: "" });
+    await chrome.storage.local.set({ apiKeyByProvider: {}, apiKey: "" });
+  } else {
+    await chrome.storage.local.set({ apiKeyByProvider: nextMap, apiKey: "" });
+    await chrome.storage.sync.set({ syncApiKeys: false, apiKeyByProvider: {}, apiKey: "" });
+  }
+  done?.();
 }
 
 function getLanguageDisplayName(code, uiLang) {
@@ -709,6 +672,12 @@ function getModelLabel(modelId, provider) {
 }
 
 function populateModels(models, selected, provider = providerSelect.value) {
+  // Keep a user's saved model on transient catalog errors. Retired IDs are
+  // migrated explicitly, not silently replaced with an arbitrary first item.
+  if (selected && !models.includes(selected) && provider !== "custom" && !isDirectProvider(provider)
+    && !(provider === "openrouter" && openrouterFreeOnlyCheckbox.checked)) {
+    models = [...models, selected];
+  }
   modelSelect.innerHTML = "";
   const hasModels = models.length > 0;
   if (hasModels) {
@@ -825,12 +794,13 @@ function normalizeProviderApiUrl(provider, apiUrl) {
 
 function isLikelyOpenAIChatModel(id) {
   if (!id) return false;
+  if (/audio|realtime|transcrib|translat|tts|embedding|image|moderation|search|deep-research/i.test(id)) return false;
   return /^(gpt-|chatgpt-|o[1-9]\d*($|-)|o\d($|-))/i.test(id);
 }
 
 async function fetchOpenAIModels(apiUrl, apiKey) {
   const endpoint = `${normalizeApiBaseUrl(apiUrl)}/models`;
-  const response = await fetch(endpoint, {
+  const response = await fetchModelCatalog(endpoint, {
     headers: {
       Authorization: `Bearer ${apiKey}`
     }
@@ -845,8 +815,7 @@ async function fetchOpenAIModels(apiUrl, apiKey) {
 
 function filterOpenAIModels(models) {
   const ids = models.map((m) => m.id).filter(Boolean);
-  const chat = ids.filter((id) => isLikelyOpenAIChatModel(id)).sort();
-  return chat.length ? chat : ids.sort();
+  return [...new Set(ids.filter(isLikelyOpenAIChatModel).map((id) => migratedModelId("openai", id)))].sort();
 }
 
 function loadOpenAICache() {
@@ -886,7 +855,7 @@ async function getOpenAIModels(apiUrl, apiKey, forceRefresh = false) {
 
 async function fetchDeepSeekModels(apiUrl, apiKey) {
   const endpoint = `${normalizeApiBaseUrl(apiUrl)}/models`;
-  const response = await fetch(endpoint, {
+  const response = await fetchModelCatalog(endpoint, {
     headers: {
       Authorization: `Bearer ${apiKey}`
     }
@@ -900,10 +869,10 @@ async function fetchDeepSeekModels(apiUrl, apiKey) {
 }
 
 function filterDeepSeekModels(models) {
-  return models
+  return [...new Set(models
     .map((m) => m.id)
     .filter((id) => /^deepseek-/i.test(String(id)))
-    .filter((id) => id !== "deepseek-chat" && id !== "deepseek-reasoner")
+    .map((id) => migratedModelId("deepseek", id)))]
     .sort();
 }
 
@@ -944,7 +913,7 @@ async function getDeepSeekModels(apiUrl, apiKey, forceRefresh = false) {
 
 async function fetchClaudeModels(apiUrl, apiKey) {
   const endpoint = `${normalizeApiBaseUrl(apiUrl)}/v1/models`;
-  const response = await fetch(endpoint, {
+  const response = await fetchModelCatalog(endpoint, {
     headers: {
       "x-api-key": apiKey,
       "anthropic-version": "2023-06-01",
@@ -960,11 +929,11 @@ async function fetchClaudeModels(apiUrl, apiKey) {
 }
 
 function filterClaudeModels(models) {
-  return models
+  return [...new Set(models
     .map((m) => m.id)
     .filter(Boolean)
     .filter((id) => /^claude-/i.test(String(id)))
-    .sort();
+    .map((id) => migratedModelId("claude", id)))].sort();
 }
 
 function loadClaudeCache() {
@@ -1023,7 +992,7 @@ function getGeminiModelsEndpoint(apiUrl) {
 
 async function fetchGeminiModels(apiUrl, apiKey) {
   const endpoint = getGeminiModelsEndpoint(apiUrl);
-  const response = await fetch(endpoint, {
+  const response = await fetchModelCatalog(endpoint, {
     headers: {
       "x-goog-api-key": apiKey
     }
@@ -1037,16 +1006,16 @@ async function fetchGeminiModels(apiUrl, apiKey) {
 }
 
 function filterGeminiModels(models) {
-  return models
+  return [...new Set(models
     .filter((m) => {
       const name = String(m?.name || "");
-      if (!name.startsWith("models/gemini")) return false;
+      if (!name.startsWith("models/gemini") || /image|tts|live|embedding|audio/i.test(name)) return false;
       const methods = Array.isArray(m?.supportedGenerationMethods) ? m.supportedGenerationMethods : [];
       return methods.length === 0 || methods.includes("generateContent");
     })
     .map((m) => String(m.name).replace(/^models\//, ""))
     .filter(Boolean)
-    .sort();
+    .map((id) => migratedModelId("gemini", id)))].sort();
 }
 
 function loadGeminiCache() {
@@ -1093,7 +1062,7 @@ async function fetchYandexModels(apiUrl, apiKey, folderId) {
   if (cleanFolderId) {
     headers["OpenAI-Project"] = cleanFolderId;
   }
-  const response = await fetch(endpoint, { headers });
+  const response = await fetchModelCatalog(endpoint, { headers });
   if (!response.ok) {
     const errorText = await response.text();
     throw new Error(`Yandex API error ${response.status}: ${errorText}`);
@@ -1153,7 +1122,7 @@ async function getYandexModels(apiUrl, apiKey, folderId, forceRefresh = false) {
 
 
 function isFreeModel(pricing) {
-  if (!pricing) return false;
+  if (!pricing || pricing.prompt == null || pricing.completion == null) return false;
   const fields = [
     "prompt",
     "completion",
@@ -1164,7 +1133,10 @@ function isFreeModel(pricing) {
     "input_cache_read",
     "input_cache_write"
   ];
-  return fields.every((key) => pricing[key] === "0" || pricing[key] === 0 || pricing[key] === undefined);
+  return fields.every((key) => pricing[key] === undefined || (
+    (typeof pricing[key] === "number" || (typeof pricing[key] === "string" && pricing[key].trim() !== ""))
+    && Number(pricing[key]) === 0
+  ));
 }
 
 async function fetchOpenrouterModels(apiKey, source) {
@@ -1174,7 +1146,7 @@ async function fetchOpenrouterModels(apiKey, source) {
 
   let lastError = null;
   for (const endpoint of endpoints) {
-    const response = await fetch(endpoint, {
+    const response = await fetchModelCatalog(endpoint, {
       headers: {
         Authorization: `Bearer ${apiKey}`
       }
@@ -1202,7 +1174,11 @@ async function fetchOpenrouterModels(apiKey, source) {
 }
 
 function filterOpenrouterModels(models, freeOnly) {
-  const filtered = freeOnly ? models.filter((m) => isFreeModel(m.pricing)) : models;
+  const textModels = models.filter((m) =>
+    (!Array.isArray(m.architecture?.input_modalities) || m.architecture.input_modalities.includes("text"))
+    && (!Array.isArray(m.architecture?.output_modalities) || m.architecture.output_modalities.includes("text"))
+  );
+  const filtered = freeOnly ? textModels.filter((m) => isFreeModel(m.pricing)) : textModels;
   return filtered.map((m) => m.id).filter(Boolean).sort();
 }
 
@@ -1224,10 +1200,10 @@ function loadOpenrouterCache() {
   });
 }
 
-async function getOpenrouterModels(apiKey, freeOnly, source) {
+async function getOpenrouterModels(apiKey, freeOnly, source, forceRefresh = false) {
   const cache = await loadOpenrouterCache();
   if (
-    cache &&
+    !forceRefresh && cache &&
     cache.freeOnly === freeOnly &&
     cache.source === source &&
     Array.isArray(cache.models) &&
@@ -1249,18 +1225,78 @@ async function getOpenrouterModels(apiKey, freeOnly, source) {
 }
 
 
-chrome.storage.sync.get(defaultConfig, (data) => {
-  data = migrateLegacyDeepSeekConfig(data);
+let keyLoadPending = false;
+
+function updateSettingsControls() {
+  saveButton.disabled = settingsBusy || keyLoadPending;
+  providerSelect.disabled = settingsBusy;
+  syncApiKeysCheckbox.disabled = settingsBusy || keyLoadPending;
+  apiKeyInput.disabled = settingsBusy || keyLoadPending;
+  apiUrlInput.disabled = settingsBusy || keyLoadPending;
+  refreshOpenrouterBtn.disabled = settingsBusy || keyLoadPending;
+  refreshYandexBtn.disabled = settingsBusy || keyLoadPending;
+}
+
+function isCurrentProvider(provider, generation) {
+  return provider === providerSelect.value && generation === providerGeneration;
+}
+
+async function refreshProviderModels({ force = false, showStatus = false } = {}) {
+  const provider = providerSelect.value;
+  const generation = providerGeneration;
+  const request = ++modelRequestGeneration;
+  const key = apiKeyInput.value.trim();
+  if (!key || settingsBusy || keyLoadPending) return;
+  const apiUrl = apiUrlInput.value;
+  const folderId = yandexFolderInput.value;
+  const freeOnly = openrouterFreeOnlyCheckbox.checked;
+  const source = openrouterSourceSelect.value;
+  const isCurrent = () => isCurrentProvider(provider, generation) && request === modelRequestGeneration;
+  const selected = modelSelect.value;
+  const loaders = {
+    openai: () => getOpenAIModels(apiUrl, key, force),
+    deepseek: () => getDeepSeekModels(apiUrl, key, force),
+    claude: () => getClaudeModels(apiUrl, key, force),
+    gemini: () => getGeminiModels(apiUrl, key, force),
+    yandexgpt: () => getYandexModels(apiUrl, key, folderId, force),
+    openrouter: () => getOpenrouterModels(key, freeOnly, source, force)
+  };
+  if (!loaders[provider]) return;
+  if (showStatus) setStatus(getLocaleStrings(uiLangSelect.value).status_refreshing, false);
+  try {
+    const models = await loaders[provider]();
+    if (!isCurrent()) return;
+    if (models.length) {
+      populateModels(models, selected, provider);
+      if (showStatus) setStatus(getLocaleStrings(uiLangSelect.value).status_models_updated, false);
+    } else if (showStatus) {
+      setStatus(getLocaleStrings(uiLangSelect.value).status_no_models, true);
+    }
+  } catch (err) {
+    if (!isCurrent()) return;
+    // Preserve the selected model and the existing list after a temporary API failure.
+    if (showStatus || provider === "openrouter") setStatus(err.message || String(err), true);
+  }
+}
+
+async function initializeOptions() {
+  let data = await chrome.storage.sync.get(defaultConfig);
+  data = await migrateLegacyModelConfig(data);
   const provider = data.provider || defaultConfig.provider;
   savedCustomApiUrl = data.customApiUrl || "";
   savedCustomModel = data.customModel || "";
   providerSelect.value = provider;
-  apiUrlInput.value = provider === "custom"
-    ? savedCustomApiUrl
-    : (data.apiUrl || defaultConfig.apiUrl);
+  displayedProvider = provider;
+  savedModelsByProvider = { ...data.modelByProvider, [provider]: data.model };
+  storedSyncApiKeys = Boolean(data.syncApiKeys);
   syncApiKeysCheckbox.checked = Boolean(data.syncApiKeys);
+  openrouterFreeOnlyCheckbox.checked =
+    typeof data.openrouterFreeOnly === "boolean"
+      ? data.openrouterFreeOnly
+      : defaultConfig.openrouterFreeOnly;
   const model = data.model || defaultConfig.model;
   applyProviderDefaults(provider, model);
+  if (provider !== "custom" && data.apiUrl) apiUrlInput.value = data.apiUrl;
   const uiLang = data.uiLang || defaultConfig.uiLang;
   buildUiLanguageOptions(uiLangSelect);
   uiLangSelect.value = uiLang;
@@ -1294,10 +1330,6 @@ chrome.storage.sync.get(defaultConfig, (data) => {
     typeof data.enableYoutubeAutoTranslation === "boolean"
       ? data.enableYoutubeAutoTranslation
       : defaultConfig.enableYoutubeAutoTranslation;
-  openrouterFreeOnlyCheckbox.checked =
-    typeof data.openrouterFreeOnly === "boolean"
-      ? data.openrouterFreeOnly
-      : defaultConfig.openrouterFreeOnly;
   openrouterSourceSelect.value = data.openrouterSource || defaultConfig.openrouterSource;
   deepseekThinkingCheckbox.checked =
     typeof data.deepseekThinkingEnabled === "boolean"
@@ -1312,283 +1344,70 @@ chrome.storage.sync.get(defaultConfig, (data) => {
   setProviderControls(providerSelect.value);
   document.getElementById("extVersion").textContent =
     "v" + chrome.runtime.getManifest().version;
-  chrome.storage.local.get({ apiKeyByProvider: {}, apiKey: "" }, (localData) => {
-    const migrated = migrateLegacyKeyData(data, localData);
-    const key = getKeyByProviderFromStore(
-      provider,
-      migrated.syncData,
-      migrated.localData,
-      Boolean(data.syncApiKeys)
-    );
-    apiKeyInput.value = key;
-    if (!key) return;
-    if (provider === "openrouter") {
-      getOpenrouterModels(key, openrouterFreeOnlyCheckbox.checked, openrouterSourceSelect.value)
-        .then((models) => {
-          if (models.length) {
-            populateModels(models, data.model || defaultConfig.model);
-          }
-        })
-        .catch((err) => {
-          setStatus(err.message || String(err), true);
-        });
-    } else if (provider === "openai") {
-      getOpenAIModels(apiUrlInput.value, key)
-        .then((models) => {
-          if (models.length) {
-            populateModels(models, data.model || defaultConfig.model);
-          }
-        })
-        .catch(() => {
-          populateModels(PROVIDERS.openai.models, data.model || defaultConfig.model);
-        });
-    } else if (provider === "deepseek") {
-      getDeepSeekModels(apiUrlInput.value, key)
-        .then((models) => {
-          if (models.length) {
-            populateModels(models, data.model || PROVIDERS.deepseek.models[0]);
-          } else {
-            populateModels(PROVIDERS.deepseek.models, data.model || PROVIDERS.deepseek.models[0]);
-          }
-        })
-        .catch(() => {
-          populateModels(PROVIDERS.deepseek.models, data.model || PROVIDERS.deepseek.models[0]);
-        });
-    } else if (provider === "claude") {
-      getClaudeModels(apiUrlInput.value, key)
-        .then((models) => {
-          if (models.length) {
-            populateModels(models, data.model || defaultConfig.model);
-          } else {
-            populateModels(PROVIDERS.claude.models, data.model || defaultConfig.model);
-          }
-        })
-        .catch(() => {
-          populateModels(PROVIDERS.claude.models, data.model || defaultConfig.model);
-        });
-    } else if (provider === "gemini") {
-      getGeminiModels(apiUrlInput.value, key)
-        .then((models) => {
-          if (models.length) {
-            populateModels(models, data.model || defaultConfig.model);
-          } else {
-            populateModels(PROVIDERS.gemini.models, data.model || defaultConfig.model);
-          }
-        })
-        .catch(() => {
-          populateModels(PROVIDERS.gemini.models, data.model || defaultConfig.model);
-        });
-    } else if (provider === "yandexgpt") {
-      getYandexModels(apiUrlInput.value, key, yandexFolderInput.value)
-        .then((models) => {
-          if (models.length) {
-            populateModels(models, data.model || defaultConfig.model);
-          } else {
-            populateModels(PROVIDERS.yandexgpt.models, data.model || defaultConfig.model);
-          }
-        })
-        .catch(() => {
-          populateModels(PROVIDERS.yandexgpt.models, data.model || defaultConfig.model);
-        });
-    }
-  });
+  const localData = await chrome.storage.local.get({ apiKeyByProvider: {}, apiKey: "" });
+  const migrated = await migrateLegacyKeyData(data, localData);
+  apiKeyInput.value = getKeyByProviderFromStore(
+    provider, migrated.syncData, migrated.localData, storedSyncApiKeys
+  );
+}
+
+updateSettingsControls();
+initializeOptions().then(() => {
+  settingsBusy = false;
+  updateSettingsControls();
+  refreshProviderModels();
+}).catch((error) => {
+  // Do not enable saving if the initial key read/migration failed.
+  setStatus(error.message || String(error), true);
 });
 
-providerSelect.addEventListener("change", () => {
+providerSelect.addEventListener("change", async () => {
+  if (settingsBusy) return;
   const provider = providerSelect.value;
-  applyProviderDefaults(provider, provider === "custom" ? savedCustomModel : "");
+  if (displayedProvider && !isDirectProvider(displayedProvider)) {
+    const previousModel = displayedProvider === "custom" ? modelCustomInput.value.trim() : modelSelect.value;
+    if (previousModel) savedModelsByProvider[displayedProvider] = previousModel;
+  }
+  displayedProvider = provider;
+  const generation = ++providerGeneration;
+  ++modelRequestGeneration;
+  keyLoadPending = true;
+  apiKeyInput.value = "";
+  updateSettingsControls();
+  const selected = migratedModelId(provider, savedModelsByProvider[provider]);
+  applyProviderDefaults(provider, selected);
   setOpenrouterControlsVisible(provider === "openrouter");
   setYandexControlsVisible(provider === "yandexgpt");
-  setProviderControls(provider);
   applySetupNoteTranslations(uiLangSelect.value);
-  chrome.storage.sync.get(defaultConfig, (data) => {
-    chrome.storage.local.get({ apiKeyByProvider: {}, apiKey: "" }, (localData) => {
-      savedCustomApiUrl = data.customApiUrl || savedCustomApiUrl;
-      savedCustomModel = data.customModel || savedCustomModel;
-      if (provider === "custom") {
-        apiUrlInput.value = savedCustomApiUrl || "";
-        modelCustomInput.value = savedCustomModel || "";
-      }
-      apiKeyInput.value = getKeyByProviderFromStore(provider, data, localData, Boolean(data.syncApiKeys));
-      yandexFolderInput.value = data.yandexFolderId || defaultConfig.yandexFolderId;
-      if (provider === "openai" && apiKeyInput.value.trim()) {
-        getOpenAIModels(apiUrlInput.value, apiKeyInput.value.trim())
-          .then((models) => {
-            if (models.length) {
-              populateModels(models, modelSelect.value || modelCustomInput.value);
-            }
-          })
-          .catch(() => {
-            populateModels(PROVIDERS.openai.models, modelSelect.value || modelCustomInput.value);
-          });
-      } else if (provider === "deepseek" && apiKeyInput.value.trim()) {
-        getDeepSeekModels(apiUrlInput.value, apiKeyInput.value.trim())
-          .then((models) => {
-            if (models.length) {
-              populateModels(models, modelSelect.value || modelCustomInput.value);
-            } else {
-              populateModels(PROVIDERS.deepseek.models, modelSelect.value || modelCustomInput.value);
-            }
-          })
-          .catch(() => {
-            populateModels(PROVIDERS.deepseek.models, modelSelect.value || modelCustomInput.value);
-          });
-      } else if (provider === "claude" && apiKeyInput.value.trim()) {
-        getClaudeModels(apiUrlInput.value, apiKeyInput.value.trim())
-          .then((models) => {
-            if (models.length) {
-              populateModels(models, modelSelect.value || modelCustomInput.value);
-            } else {
-              populateModels(PROVIDERS.claude.models, modelSelect.value || modelCustomInput.value);
-            }
-          })
-          .catch(() => {
-            populateModels(PROVIDERS.claude.models, modelSelect.value || modelCustomInput.value);
-          });
-      } else if (provider === "gemini" && apiKeyInput.value.trim()) {
-        getGeminiModels(apiUrlInput.value, apiKeyInput.value.trim())
-          .then((models) => {
-            if (models.length) {
-              populateModels(models, modelSelect.value || modelCustomInput.value);
-            } else {
-              populateModels(PROVIDERS.gemini.models, modelSelect.value || modelCustomInput.value);
-            }
-          })
-          .catch(() => {
-            populateModels(PROVIDERS.gemini.models, modelSelect.value || modelCustomInput.value);
-          });
-      } else if (provider === "yandexgpt" && apiKeyInput.value.trim()) {
-        getYandexModels(apiUrlInput.value, apiKeyInput.value.trim(), yandexFolderInput.value)
-          .then((models) => {
-            if (models.length) {
-              populateModels(models, modelSelect.value || modelCustomInput.value);
-            } else {
-              populateModels(PROVIDERS.yandexgpt.models, modelSelect.value || modelCustomInput.value);
-            }
-          })
-          .catch(() => {
-            populateModels(PROVIDERS.yandexgpt.models, modelSelect.value || modelCustomInput.value);
-          });
-      }
-    });
-  });
+  try {
+    const [data, localData] = await Promise.all([
+      chrome.storage.sync.get(defaultConfig),
+      chrome.storage.local.get({ apiKeyByProvider: {}, apiKey: "" })
+    ]);
+    if (!isCurrentProvider(provider, generation)) return;
+    storedSyncApiKeys = Boolean(data.syncApiKeys);
+    apiKeyInput.value = getKeyByProviderFromStore(provider, data, localData, storedSyncApiKeys);
+    yandexFolderInput.value = data.yandexFolderId || defaultConfig.yandexFolderId;
+    if (provider !== "custom" && data.provider === provider && data.apiUrl) apiUrlInput.value = data.apiUrl;
+    keyLoadPending = false;
+    updateSettingsControls();
+    refreshProviderModels();
+  } catch (err) {
+    if (!isCurrentProvider(provider, generation)) return;
+    setStatus(err.message || String(err), true);
+    // Keep save disabled; changing providers retries the key read.
+  }
 });
 
 apiUrlInput.addEventListener("input", () => {
-  if (providerSelect.value === "custom") {
-    savedCustomApiUrl = apiUrlInput.value.trim();
-  }
+  ++modelRequestGeneration;
+  if (providerSelect.value === "custom") savedCustomApiUrl = apiUrlInput.value.trim();
 });
-
+apiKeyInput.addEventListener("input", () => { ++modelRequestGeneration; });
+modelSelect.addEventListener("change", () => { ++modelRequestGeneration; });
+yandexFolderInput.addEventListener("input", () => { ++modelRequestGeneration; });
 modelCustomInput.addEventListener("input", () => {
-  if (providerSelect.value === "custom") {
-    savedCustomModel = modelCustomInput.value.trim();
-  }
-});
-
-function refreshProviderModelsAfterSave(provider, apiUrl, apiKey, model, yandexFolderId, uiLang) {
-  if (!apiKey) return;
-  if (provider === "openrouter") {
-    getOpenrouterModels(apiKey, openrouterFreeOnlyCheckbox.checked, openrouterSourceSelect.value)
-      .then((models) => {
-        if (models.length) {
-          populateModels(models, model);
-        }
-      })
-      .catch((err) => {
-        setStatus(err.message || String(err), true);
-      });
-    return;
-  }
-  if (provider === "openai") {
-    getOpenAIModels(apiUrl, apiKey, true)
-      .then((models) => {
-        if (models.length) {
-          populateModels(models, model);
-          setStatus(getLocaleStrings(uiLang).status_models_updated, false);
-        }
-      })
-      .catch((err) => {
-        populateModels(PROVIDERS.openai.models, model);
-        setStatus(err.message || String(err), true);
-      });
-    return;
-  }
-  if (provider === "deepseek") {
-    getDeepSeekModels(apiUrl, apiKey, true)
-      .then((models) => {
-        if (models.length) {
-          populateModels(models, model);
-          setStatus(getLocaleStrings(uiLang).status_models_updated, false);
-        } else {
-          populateModels(PROVIDERS.deepseek.models, model);
-        }
-      })
-      .catch((err) => {
-        populateModels(PROVIDERS.deepseek.models, model);
-        setStatus(err.message || String(err), true);
-      });
-    return;
-  }
-  if (provider === "claude") {
-    getClaudeModels(apiUrl, apiKey, true)
-      .then((models) => {
-        if (models.length) {
-          populateModels(models, model);
-          setStatus(getLocaleStrings(uiLang).status_models_updated, false);
-        } else {
-          populateModels(PROVIDERS.claude.models, model);
-        }
-      })
-      .catch((err) => {
-        populateModels(PROVIDERS.claude.models, model);
-        setStatus(err.message || String(err), true);
-      });
-    return;
-  }
-  if (provider === "gemini") {
-    getGeminiModels(apiUrl, apiKey, true)
-      .then((models) => {
-        if (models.length) {
-          populateModels(models, model);
-          setStatus(getLocaleStrings(uiLang).status_models_updated, false);
-        } else {
-          populateModels(PROVIDERS.gemini.models, model);
-        }
-      })
-      .catch((err) => {
-        populateModels(PROVIDERS.gemini.models, model);
-        setStatus(err.message || String(err), true);
-      });
-    return;
-  }
-  if (provider === "yandexgpt") {
-    getYandexModels(apiUrl, apiKey, yandexFolderId, true)
-      .then((models) => {
-        if (models.length) {
-          populateModels(models, model);
-          setStatus(getLocaleStrings(uiLang).status_models_updated, false);
-        } else {
-          populateModels(PROVIDERS.yandexgpt.models, model);
-        }
-      })
-      .catch((err) => {
-        populateModels(PROVIDERS.yandexgpt.models, model);
-        setStatus(err.message || String(err), true);
-      });
-  }
-}
-
-syncApiKeysCheckbox.addEventListener("change", () => {
-  const useSyncKeys = syncApiKeysCheckbox.checked;
-  const currentProvider = providerSelect.value || defaultConfig.provider;
-  migrateKeyStorage(useSyncKeys, currentProvider, () => {
-    chrome.storage.sync.get(defaultConfig, (syncData) => {
-      chrome.storage.local.get({ apiKeyByProvider: {}, apiKey: "" }, (localData) => {
-        apiKeyInput.value = getKeyByProviderFromStore(currentProvider, syncData, localData, useSyncKeys);
-      });
-    });
-  });
+  if (providerSelect.value === "custom") savedCustomModel = modelCustomInput.value.trim();
 });
 
 uiLangSelect.addEventListener("change", () => {
@@ -1604,67 +1423,45 @@ uiLangSelect.addEventListener("change", () => {
 });
 
 openrouterFreeOnlyCheckbox.addEventListener("change", () => {
+  ++modelRequestGeneration;
   chrome.storage.sync.set({ openrouterFreeOnly: openrouterFreeOnlyCheckbox.checked });
+  if (providerSelect.value === "openrouter") {
+    if (openrouterFreeOnlyCheckbox.checked) {
+      populateModels(PROVIDERS.openrouter.models, "", "openrouter");
+    }
+    refreshProviderModels();
+  }
 });
 
 openrouterSourceSelect.addEventListener("change", () => {
+  ++modelRequestGeneration;
   chrome.storage.sync.set({ openrouterSource: openrouterSourceSelect.value });
+  if (providerSelect.value === "openrouter") refreshProviderModels();
 });
 
-refreshOpenrouterBtn.addEventListener("click", async () => {
-  const key = apiKeyInput.value.trim();
-  if (!key) {
+refreshOpenrouterBtn.addEventListener("click", () => {
+  if (providerSelect.value !== "openrouter") return;
+  if (!apiKeyInput.value.trim()) {
     setStatus(getLocaleStrings(uiLangSelect.value).status_set_openrouter_key, true);
     return;
   }
-  try {
-    setStatus(getLocaleStrings(uiLangSelect.value).status_refreshing, false);
-    const models = await getOpenrouterModels(
-      key,
-      openrouterFreeOnlyCheckbox.checked,
-      openrouterSourceSelect.value
-    );
-    if (!models.length) {
-      setStatus(getLocaleStrings(uiLangSelect.value).status_no_models, true);
-      return;
-    }
-    populateModels(models, modelSelect.value);
-    setStatus(getLocaleStrings(uiLangSelect.value).status_models_updated, false);
-  } catch (err) {
-    setStatus(err.message || String(err), true);
-  }
+  refreshProviderModels({ force: true, showStatus: true });
 });
-
-refreshYandexBtn.addEventListener("click", async () => {
-  const strings = getLocaleStrings(uiLangSelect.value);
-  const key = apiKeyInput.value.trim();
-  if (!key) {
-    setStatus(strings.status_set_yandex_key || "Set YandexGPT API key first.", true);
+refreshYandexBtn.addEventListener("click", () => {
+  if (providerSelect.value !== "yandexgpt") return;
+  if (!apiKeyInput.value.trim()) {
+    setStatus(getLocaleStrings(uiLangSelect.value).status_set_yandex_key || "Set YandexGPT API key first.", true);
     return;
   }
-  try {
-    setStatus(strings.status_refreshing || "Refreshing models...", false);
-    const models = await getYandexModels(
-      apiUrlInput.value,
-      key,
-      yandexFolderInput.value,
-      true
-    );
-    if (!models.length) {
-      setStatus(getLocaleStrings(uiLangSelect.value).status_no_models, true);
-      return;
-    }
-    populateModels(models, modelSelect.value);
-    setStatus(getLocaleStrings(uiLangSelect.value).status_models_updated, false);
-  } catch (err) {
-    setStatus(err.message || String(err), true);
-  }
+  refreshProviderModels({ force: true, showStatus: true });
 });
 
-document.getElementById("save").addEventListener("click", () => {
+saveButton.addEventListener("click", async () => {
+  if (settingsBusy || keyLoadPending) return;
   const provider = providerSelect.value;
   const isCustom = provider === "custom";
   const modelValue = isCustom ? modelCustomInput.value.trim() : modelSelect.value;
+  const currentKey = apiKeyInput.value.trim();
   if (isCustom) {
     savedCustomApiUrl = apiUrlInput.value.trim();
     savedCustomModel = modelValue;
@@ -1674,6 +1471,7 @@ document.getElementById("save").addEventListener("click", () => {
     provider,
     apiUrl: normalizeProviderApiUrl(provider, apiUrlInput.value),
     model: modelValue,
+    modelByProvider: { ...savedModelsByProvider, [provider]: modelValue },
     customApiUrl: savedCustomApiUrl,
     customModel: savedCustomModel,
     targetLang: targetLangSelect.value,
@@ -1692,51 +1490,35 @@ document.getElementById("save").addEventListener("click", () => {
     deepseekThinkingEnabled: deepseekThinkingCheckbox.checked,
     yandexFolderId: yandexFolderInput.value.trim()
   };
-
   if (!config.apiUrl || (!isDirectProvider(provider) && !config.model)) {
     setStatus(getLocaleStrings(uiLangSelect.value).status_required, true);
     return;
   }
-
-  chrome.storage.sync.set(config, () => {
-    migrateKeyStorage(syncApiKeys, provider, () => {
-      const currentKey = apiKeyInput.value.trim();
-      if (syncApiKeys) {
-        chrome.storage.sync.get({ apiKeyByProvider: {} }, (syncData) => {
-          const keyMap = { ...(syncData.apiKeyByProvider || {}) };
-          keyMap[provider] = currentKey;
-          chrome.storage.sync.set({ apiKeyByProvider: keyMap, apiKey: "" }, () => {
-            setStatus(getLocaleStrings(uiLangSelect.value).status_saved, false);
-            refreshProviderModelsAfterSave(
-              provider,
-              config.apiUrl,
-              currentKey,
-              config.model,
-              config.yandexFolderId,
-              uiLangSelect.value
-            );
-          });
-        });
-      } else {
-        chrome.storage.local.get({ apiKeyByProvider: {} }, (localData) => {
-          const keyMap = { ...(localData.apiKeyByProvider || {}) };
-          keyMap[provider] = currentKey;
-          chrome.storage.local.set({ apiKeyByProvider: keyMap, apiKey: "" }, () => {
-            chrome.storage.sync.set({ apiKeyByProvider: {}, apiKey: "" }, () => {
-              setStatus(getLocaleStrings(uiLangSelect.value).status_saved, false);
-              refreshProviderModelsAfterSave(
-                provider,
-                config.apiUrl,
-                currentKey,
-                config.model,
-                config.yandexFolderId,
-                uiLangSelect.value
-              );
-            });
-          });
-        });
-      }
+  settingsBusy = true;
+  ++modelRequestGeneration;
+  updateSettingsControls();
+  let saved = false;
+  try {
+    if (storedSyncApiKeys !== syncApiKeys) {
+      await migrateKeyStorage(syncApiKeys, provider);
+      storedSyncApiKeys = syncApiKeys;
+    }
+    const area = syncApiKeys ? chrome.storage.sync : chrome.storage.local;
+    const data = await area.get({ apiKeyByProvider: {} });
+    await area.set({
+      apiKeyByProvider: { ...data.apiKeyByProvider, [provider]: currentKey },
+      apiKey: ""
     });
-  });
+    await chrome.storage.sync.set(config);
+    savedModelsByProvider = config.modelByProvider;
+    setStatus(getLocaleStrings(uiLangSelect.value).status_saved, false);
+    saved = true;
+  } catch (err) {
+    setStatus(err.message || String(err), true);
+  } finally {
+    settingsBusy = false;
+    updateSettingsControls();
+  }
+  if (saved) refreshProviderModels({ force: true });
 });
 

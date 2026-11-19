@@ -1,9 +1,11 @@
+importScripts("model-config.js");
+
 const DEFAULT_CONFIG = {
   provider: "googletranslate",
   apiUrl: "https://translate.googleapis.com",
   apiKey: "",
   apiKeyByProvider: {},
-  model: "gpt-4o-mini",
+  model: "gpt-6-luna",
   targetLang: "en",
   sourceLang: "auto",
   syncApiKeys: false,
@@ -13,6 +15,59 @@ const DEFAULT_CONFIG = {
   deepseekThinkingEnabled: false,
   yandexFolderId: ""
 };
+
+// Content scripts run on arbitrary sites. API keys and translation history must
+// only be readable by extension pages and the service worker.
+const storageAccessReady = Promise.all([
+  chrome.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" }),
+  chrome.storage.sync.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" })
+]);
+storageAccessReady.catch((error) => console.error("Could not restrict storage access", error));
+
+const CONTENT_CONFIG_DEFAULTS = {
+  targetLang: "en",
+  sourceLang: "auto",
+  uiLang: "en",
+  overlayMode: "center",
+  overlayDuration: 6,
+  selectionShortcut: false,
+  enableXInlineTranslation: true,
+  enableYoutubeInlineTranslation: true,
+  enableXAutoTranslation: false,
+  enableYoutubeAutoTranslation: false,
+  provider: "googletranslate",
+  model: "gpt-6-luna",
+  deepseekThinkingEnabled: false
+};
+
+async function getContentConfig() {
+  await storageAccessReady;
+  const stored = await chrome.storage.sync.get(CONTENT_CONFIG_DEFAULTS);
+  return Object.fromEntries(Object.keys(CONTENT_CONFIG_DEFAULTS).map(
+    (key) => [key, stored[key] ?? CONTENT_CONFIG_DEFAULTS[key]]
+  ));
+}
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== "sync") return;
+  const relevant = Object.keys(changes).some(
+    (key) => Object.hasOwn(CONTENT_CONFIG_DEFAULTS, key) || key === "apiUrl"
+  );
+  if (!relevant) return;
+  chrome.tabs.query({}, (tabs) => {
+    if (chrome.runtime.lastError) return;
+    for (const tab of tabs || []) {
+      if (tab.id == null) continue;
+      chrome.tabs.sendMessage(tab.id, {
+        action: "contentConfigChanged",
+        endpointChanged: Object.hasOwn(changes, "apiUrl")
+      }, () => {
+        // Most tabs may not have a content script (e.g. chrome:// pages).
+        void chrome.runtime.lastError;
+      });
+    }
+  });
+});
 
 const REQUEST_TIMEOUT_MS = 45000;
 const STREAM_IDLE_TIMEOUT_MS = 45000;
@@ -475,35 +530,15 @@ function buildProviderHeaders(config, authToken) {
   return headers;
 }
 
-const DEEPSEEK_LEGACY_MODEL_CONFIG = {
-  "deepseek-chat": {
-    model: "deepseek-v4-flash",
-    thinkingEnabled: false
-  },
-  "deepseek-reasoner": {
-    model: "deepseek-v4-flash",
-    thinkingEnabled: true
-  }
-};
-
-function getDeepSeekLegacyModelConfig(model) {
-  return DEEPSEEK_LEGACY_MODEL_CONFIG[String(model || "").trim()] || null;
-}
-
-async function migrateLegacyDeepSeekConfig(config) {
-  if (config.provider !== "deepseek") return config;
-  const migration = getDeepSeekLegacyModelConfig(config.model);
-  if (!migration) return config;
-  const migrated = {
-    ...config,
-    model: migration.model,
-    deepseekThinkingEnabled: migration.thinkingEnabled
-  };
+async function migrateLegacyModelConfig(config) {
+  const migrated = migrateModelConfig(config);
+  if (migrated === config) return config;
   try {
-    await chrome.storage.sync.set({
-      model: migrated.model,
-      deepseekThinkingEnabled: migrated.deepseekThinkingEnabled
-    });
+    // Do not overwrite a different provider/model selected while the read was pending.
+    const current = await chrome.storage.sync.get({ provider: "", model: "" });
+    if (current.provider === config.provider && current.model === config.model) {
+      await chrome.storage.sync.set(modelMigrationPatch(config, migrated));
+    }
   } catch (_) {
     // Persisting the migration is best-effort and must not block translation.
   }
@@ -511,11 +546,8 @@ async function migrateLegacyDeepSeekConfig(config) {
 }
 
 function resolveModelForProvider(config) {
-  const model = (config.model || "").trim();
+  const model = migratedModelId(config.provider, (config.model || "").trim());
   if (!model) return model;
-  if (config.provider === "deepseek") {
-    return getDeepSeekLegacyModelConfig(model)?.model || model;
-  }
   if (config.provider !== "yandexgpt") {
     return model;
   }
@@ -614,13 +646,13 @@ function buildTranslateRequestBody(config, text, targetLang, sourceLang, stream)
     stream: Boolean(stream)
   };
   if (config.provider === "deepseek") {
-    const legacyModel = getDeepSeekLegacyModelConfig(config.model);
-    const thinkingEnabled = legacyModel
-      ? legacyModel.thinkingEnabled
-      : config.deepseekThinkingEnabled === true;
+    const thinkingEnabled = migrateModelConfig(config).deepseekThinkingEnabled === true;
     body.thinking = {
       type: thinkingEnabled ? "enabled" : "disabled"
     };
+  }
+  if (config.provider === "openai" && body.model === "gpt-6-luna") {
+    body.reasoning_effort = "none";
   }
   return body;
 }
@@ -850,7 +882,7 @@ function extractDeltaFromOpenAIChunk(json) {
 
 async function translateText(text, overrides = {}) {
   let config = await chrome.storage.sync.get(DEFAULT_CONFIG);
-  config = await migrateLegacyDeepSeekConfig(config);
+  config = await migrateLegacyModelConfig(config);
   const targetLang = overrides.targetLang || config.targetLang;
   const sourceLang = overrides.sourceLang || config.sourceLang;
   if (isDirectTranslationProvider(config.provider)) {
@@ -887,7 +919,7 @@ async function translateText(text, overrides = {}) {
 
 async function streamTranslate(text, onUpdate, overrides = {}) {
   let config = await chrome.storage.sync.get(DEFAULT_CONFIG);
-  config = await migrateLegacyDeepSeekConfig(config);
+  config = await migrateLegacyModelConfig(config);
   if (isDirectTranslationProvider(config.provider) || config.provider === "yandexgpt") {
     const translated = await translateText(text, overrides);
     onUpdate(translated, true);
@@ -1117,6 +1149,12 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.action === "getContentConfig" && sender.tab?.id != null) {
+    getContentConfig()
+      .then((config) => sendResponse({ ok: true, config }))
+      .catch(() => sendResponse({ ok: false }));
+    return true;
+  }
   if (message?.action === "translateText" && message.text) {
     translateText(message.text, {
       sourceLang: message.sourceLang,

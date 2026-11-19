@@ -35,6 +35,7 @@ Chrome extension for translating selected text, X (Twitter) posts, and YouTube c
 - Output modes: bottom-right toast or centered modal (no extension-popup output).
 - Target + source language selection (autodetect available).
 - API keys can be stored locally (default) or synchronized across devices (optional, less secure).
+- API keys stay in trusted extension contexts; content scripts receive only the settings they need.
 - Results saved to “Last translation / Last error” in popup.
 
 ## Usage
