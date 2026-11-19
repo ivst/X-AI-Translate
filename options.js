@@ -764,6 +764,7 @@ function applyProviderDefaults(provider, currentModel) {
   cancelScheduledCatalogRefresh();
   catalogPending = false;
   pendingCatalogSelection = null;
+  deferredCatalogRefresh = null;
   catalogFieldsDirty = false;
   modelCatalogNotice = null;
   const preset = PROVIDERS[provider] || PROVIDERS.custom;

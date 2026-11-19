@@ -597,3 +597,24 @@ test("Enter and the following blur do not commit the catalog twice", async () =>
   assert.deepEqual(el("model").options.map((option) => option.value), ["gpt-6-luna"]);
   assert.equal(fetches.length, 2, "the committed value is not requested again");
 });
+
+test("a deferred refresh does not survive a provider switch", async () => {
+  const { el, context, fetches, select, answer } = await makeOptions();
+  await select("openai");
+  const initial = await waitForFetch(fetches, () => true);
+  answer(initial, ["gpt-6-luna"]);
+  await tick();
+  // Queue a refresh while the form is busy, then switch providers before it runs.
+  vm.runInContext("setTimeout = () => null", context);
+  vm.runInContext("settingsBusy = true", context);
+  await vm.runInContext("refreshProviderModels", context)({ force: true });
+  vm.runInContext("settingsBusy = false", context);
+  const switched = select("claude");
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const claudeRequests = fetches.filter((request) => request.url.includes("anthropic"));
+  assert.equal(claudeRequests.length, 1, "the new provider catalog is requested once");
+  answer(claudeRequests[0], ["claude-haiku-5-5"]);
+  await switched;
+  await tick();
+  assert.deepEqual(el("model").options.map((option) => option.value), ["claude-haiku-5-5"]);
+});
