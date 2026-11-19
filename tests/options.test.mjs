@@ -33,7 +33,7 @@ class Element {
   addEventListener(name, listener) { this.listeners[name] = listener; }
   setAttribute() {}
   removeAttribute() {}
-  fire(name) { return this.listeners[name]?.(); }
+  fire(name, event) { return this.listeners[name]?.(event); }
 }
 
 function deferred() {
@@ -499,17 +499,37 @@ test("background catalog refresh keeps saving available", async () => {
   assert.equal(el("save").disabled, false);
 });
 
-test("a catalog refresh requested while the form is busy retries", async () => {
+test("Enter commits a credential edit and refreshes the catalog", async () => {
+  const { el, fetches, select, answer } = await makeOptions();
+  await select("openai");
+  const initial = await waitForFetch(fetches, () => true);
+  answer(initial, ["gpt-6-luna"]);
+  await tick();
+  el("apiKey").value = "new-key";
+  el("apiKey").fire("input");
+  assert.equal(fetches.length, 1, "typing alone does not request the catalog");
+  el("apiKey").fire("keydown", { key: "Enter" });
+  const fresh = await waitForFetch(fetches, (request) => request !== initial);
+  assert.equal(fresh.options.headers.Authorization, "Bearer new-key");
+  answer(fresh, ["gpt-6-luna"]);
+  await tick();
+  assert.equal(el("save").disabled, false);
+});
+
+test("a refresh requested while the form is busy runs when it frees up", async () => {
   const { el, context, fetches, select, answer } = await makeOptions();
   await select("openai");
   const initial = await waitForFetch(fetches, () => true);
   answer(initial, ["gpt-6-luna"]);
   await tick();
+  // No timer fallback: the deferred refresh has to be picked up by the form.
+  vm.runInContext("setTimeout = () => null", context);
   vm.runInContext("settingsBusy = true", context);
   const refresh = vm.runInContext("refreshProviderModels", context);
   await refresh({ force: true });
   assert.equal(fetches.length, 1, "no request is made while the form is busy");
   vm.runInContext("settingsBusy = false", context);
+  vm.runInContext("updateSettingsControls()", context);
   const retried = await waitForFetch(fetches, (request) => request !== initial);
   answer(retried, ["gpt-6-luna"]);
   await tick();

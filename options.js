@@ -1293,7 +1293,7 @@ let keyLoadPending = false;
 let catalogPending = false;
 let pendingCatalogSelection = null;
 let catalogRefreshTimer = null;
-let catalogRefreshRetries = 0;
+let deferredCatalogRefresh = null;
 
 function hasModelCatalog(provider) {
   return Boolean(PROVIDERS[provider] && !isDirectProvider(provider) && provider !== "custom");
@@ -1341,6 +1341,13 @@ function isCatalogInvalidated() {
   return catalogPending && pendingCatalogSelection !== null;
 }
 
+function settleDeferredCatalogRefresh() {
+  if (!deferredCatalogRefresh || settingsBusy || keyLoadPending) return;
+  const options = deferredCatalogRefresh;
+  deferredCatalogRefresh = null;
+  refreshProviderModels(options);
+}
+
 function updateSettingsControls() {
   saveButton.disabled = settingsBusy || keyLoadPending || isCatalogInvalidated();
   providerSelect.disabled = settingsBusy;
@@ -1354,6 +1361,9 @@ function updateSettingsControls() {
   openrouterFreeOnlyCheckbox.disabled = settingsBusy || keyLoadPending;
   openrouterSourceSelect.disabled = settingsBusy || keyLoadPending;
   yandexFolderInput.disabled = settingsBusy || keyLoadPending;
+  // Busy states always end by re-enabling the form, so this is the one place
+  // where a refresh postponed by that state can safely run.
+  settleDeferredCatalogRefresh();
 }
 
 function isCurrentProvider(provider, generation) {
@@ -1362,22 +1372,17 @@ function isCurrentProvider(provider, generation) {
 
 async function refreshProviderModels({ force = false, showStatus = false } = {}) {
   const provider = providerSelect.value;
-  if (!hasModelCatalog(provider)) return;
-  if (settingsBusy || keyLoadPending) {
-    // A refresh requested while the form is busy must not leave the catalog
-    // stuck in its invalidated/loading state; retry shortly, bounded so a
-    // permanently busy form cannot spin on a timer forever.
-    if (catalogRefreshRetries < 20) {
-      catalogRefreshRetries += 1;
-      cancelScheduledCatalogRefresh();
-      catalogRefreshTimer = setTimeout(() => {
-        catalogRefreshTimer = null;
-        refreshProviderModels({ force, showStatus });
-      }, 350);
-    }
+  if (!hasModelCatalog(provider)) {
+    deferredCatalogRefresh = null;
     return;
   }
-  catalogRefreshRetries = 0;
+  if (settingsBusy || keyLoadPending) {
+    // The form is mid-save or mid-key-read; run once it is free again instead
+    // of leaving the catalog invalidated or stuck in its loading state.
+    deferredCatalogRefresh = { force, showStatus };
+    return;
+  }
+  deferredCatalogRefresh = null;
   cancelScheduledCatalogRefresh();
   const generation = providerGeneration;
   const request = ++modelRequestGeneration;
@@ -1566,6 +1571,15 @@ modelSelect.addEventListener("change", () => {
 });
 yandexFolderInput.addEventListener("input", () => invalidateModelCatalog());
 yandexFolderInput.addEventListener("change", scheduleCatalogRefresh);
+// Text inputs only emit `change` when they lose focus, so Enter has to commit
+// the field explicitly to match the documented blur/Enter behavior.
+for (const input of [apiKeyInput, apiUrlInput, yandexFolderInput]) {
+  input.addEventListener("keydown", (event) => {
+    if (event?.key !== "Enter") return;
+    event.preventDefault?.();
+    scheduleCatalogRefresh();
+  });
+}
 modelCustomInput.addEventListener("input", () => {
   if (providerSelect.value === "custom") savedCustomModel = modelCustomInput.value.trim();
 });
