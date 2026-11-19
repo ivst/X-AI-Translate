@@ -165,6 +165,11 @@ function fetchModelCatalog(url, options) {
   return fetch(url, { ...options, signal: AbortSignal.timeout(15000) });
 }
 
+async function getApiKeyFingerprint(apiKey) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(apiKey));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 const SETUP_NOTE_I18N = {
   ar: {
     intro: "يتطلب استخدام الإضافة التسجيل ومفتاح API من أي مزود متوافق مع OpenAI.",
@@ -671,10 +676,10 @@ function getModelLabel(modelId, provider) {
   return modelId;
 }
 
-function populateModels(models, selected, provider = providerSelect.value) {
-  // Keep a user's saved model on transient catalog errors. Retired IDs are
-  // migrated explicitly, not silently replaced with an arbitrary first item.
-  if (selected && !models.includes(selected) && provider !== "custom" && !isDirectProvider(provider)
+function populateModels(models, selected, provider = providerSelect.value, { preserveUnlisted = false } = {}) {
+  // Preserve saved IDs when displaying presets, but never reinsert an ID
+  // excluded by a successfully loaded, filtered catalog.
+  if (preserveUnlisted && selected && !models.includes(selected) && provider !== "custom" && !isDirectProvider(provider)
     && !(provider === "openrouter" && openrouterFreeOnlyCheckbox.checked)) {
     models = [...models, selected];
   }
@@ -691,11 +696,15 @@ function populateModels(models, selected, provider = providerSelect.value) {
     modelSelect.disabled = false;
     modelCustomInput.style.display = "none";
     modelSelect.value = selected && models.includes(selected) ? selected : models[0];
-  } else {
+  } else if (provider === "custom") {
     modelSelect.style.display = "none";
     modelSelect.disabled = true;
     modelCustomInput.style.display = "block";
     modelCustomInput.value = selected || "";
+  } else {
+    modelSelect.style.display = "block";
+    modelSelect.disabled = true;
+    modelCustomInput.style.display = "none";
   }
 }
 
@@ -741,7 +750,7 @@ function applyProviderDefaults(provider, currentModel) {
     return;
   }
   apiUrlInput.value = preset.apiUrl || "";
-  populateModels(preset.models, currentModel);
+  populateModels(preset.models, currentModel, provider, { preserveUnlisted: true });
   setProviderControls(provider);
 }
 
@@ -831,11 +840,13 @@ async function getOpenAIModels(apiUrl, apiKey, forceRefresh = false) {
   if (!normalizedUrl) {
     throw new Error("API URL is required.");
   }
+  const keyFingerprint = await getApiKeyFingerprint(apiKey);
   const cache = await loadOpenAICache();
   if (
     !forceRefresh &&
     cache &&
     cache.apiUrl === normalizedUrl &&
+    cache.keyFingerprint === keyFingerprint &&
     Array.isArray(cache.models) &&
     Date.now() - cache.ts < OPENAI_CACHE_TTL_MS
   ) {
@@ -847,6 +858,7 @@ async function getOpenAIModels(apiUrl, apiKey, forceRefresh = false) {
     [OPENAI_CACHE_KEY]: {
       ts: Date.now(),
       apiUrl: normalizedUrl,
+      keyFingerprint,
       models: ids
     }
   });
@@ -889,11 +901,13 @@ async function getDeepSeekModels(apiUrl, apiKey, forceRefresh = false) {
   if (!normalizedUrl) {
     throw new Error("API URL is required.");
   }
+  const keyFingerprint = await getApiKeyFingerprint(apiKey);
   const cache = await loadDeepSeekCache();
   if (
     !forceRefresh &&
     cache &&
     cache.apiUrl === normalizedUrl &&
+    cache.keyFingerprint === keyFingerprint &&
     Array.isArray(cache.models) &&
     Date.now() - cache.ts < DEEPSEEK_CACHE_TTL_MS
   ) {
@@ -905,6 +919,7 @@ async function getDeepSeekModels(apiUrl, apiKey, forceRefresh = false) {
     [DEEPSEEK_CACHE_KEY]: {
       ts: Date.now(),
       apiUrl: normalizedUrl,
+      keyFingerprint,
       models: ids
     }
   });
@@ -949,11 +964,13 @@ async function getClaudeModels(apiUrl, apiKey, forceRefresh = false) {
   if (!normalizedUrl) {
     throw new Error("API URL is required.");
   }
+  const keyFingerprint = await getApiKeyFingerprint(apiKey);
   const cache = await loadClaudeCache();
   if (
     !forceRefresh &&
     cache &&
     cache.apiUrl === normalizedUrl &&
+    cache.keyFingerprint === keyFingerprint &&
     Array.isArray(cache.models) &&
     Date.now() - cache.ts < CLAUDE_CACHE_TTL_MS
   ) {
@@ -965,6 +982,7 @@ async function getClaudeModels(apiUrl, apiKey, forceRefresh = false) {
     [CLAUDE_CACHE_KEY]: {
       ts: Date.now(),
       apiUrl: normalizedUrl,
+      keyFingerprint,
       models: ids
     }
   });
@@ -1031,11 +1049,13 @@ async function getGeminiModels(apiUrl, apiKey, forceRefresh = false) {
   if (!normalizedUrl) {
     throw new Error("API URL is required.");
   }
+  const keyFingerprint = await getApiKeyFingerprint(apiKey);
   const cache = await loadGeminiCache();
   if (
     !forceRefresh &&
     cache &&
     cache.apiUrl === normalizedUrl &&
+    cache.keyFingerprint === keyFingerprint &&
     Array.isArray(cache.models) &&
     Date.now() - cache.ts < GEMINI_CACHE_TTL_MS
   ) {
@@ -1047,6 +1067,7 @@ async function getGeminiModels(apiUrl, apiKey, forceRefresh = false) {
     [GEMINI_CACHE_KEY]: {
       ts: Date.now(),
       apiUrl: normalizedUrl,
+      keyFingerprint,
       models: ids
     }
   });
@@ -1096,11 +1117,13 @@ async function getYandexModels(apiUrl, apiKey, folderId, forceRefresh = false) {
   if (!normalizedUrl) {
     throw new Error("API URL is required.");
   }
+  const keyFingerprint = await getApiKeyFingerprint(apiKey);
   const cache = await loadYandexCache();
   if (
     !forceRefresh &&
     cache &&
     cache.apiUrl === normalizedUrl &&
+    cache.keyFingerprint === keyFingerprint &&
     cache.folderId === cleanFolderId &&
     Array.isArray(cache.models) &&
     Date.now() - cache.ts < YANDEX_CACHE_TTL_MS
@@ -1113,6 +1136,7 @@ async function getYandexModels(apiUrl, apiKey, folderId, forceRefresh = false) {
     [YANDEX_CACHE_KEY]: {
       ts: Date.now(),
       apiUrl: normalizedUrl,
+      keyFingerprint,
       folderId: cleanFolderId,
       models: ids
     }
@@ -1182,16 +1206,6 @@ function filterOpenrouterModels(models, freeOnly) {
   return filtered.map((m) => m.id).filter(Boolean).sort();
 }
 
-function saveOpenrouterCache(models, freeOnly) {
-  chrome.storage.local.set({
-    [OPENROUTER_CACHE_KEY]: {
-      ts: Date.now(),
-      freeOnly,
-      models
-    }
-  });
-}
-
 function loadOpenrouterCache() {
   return new Promise((resolve) => {
     chrome.storage.local.get({ [OPENROUTER_CACHE_KEY]: null }, (data) => {
@@ -1201,9 +1215,11 @@ function loadOpenrouterCache() {
 }
 
 async function getOpenrouterModels(apiKey, freeOnly, source, forceRefresh = false) {
+  const keyFingerprint = await getApiKeyFingerprint(apiKey);
   const cache = await loadOpenrouterCache();
   if (
     !forceRefresh && cache &&
+    cache.keyFingerprint === keyFingerprint &&
     cache.freeOnly === freeOnly &&
     cache.source === source &&
     Array.isArray(cache.models) &&
@@ -1216,6 +1232,7 @@ async function getOpenrouterModels(apiKey, freeOnly, source, forceRefresh = fals
   chrome.storage.local.set({
     [OPENROUTER_CACHE_KEY]: {
       ts: Date.now(),
+      keyFingerprint,
       freeOnly,
       source,
       models: ids
@@ -1266,10 +1283,10 @@ async function refreshProviderModels({ force = false, showStatus = false } = {})
   try {
     const models = await loaders[provider]();
     if (!isCurrent()) return;
+    populateModels(models, selected, provider);
     if (models.length) {
-      populateModels(models, selected, provider);
       if (showStatus) setStatus(getLocaleStrings(uiLangSelect.value).status_models_updated, false);
-    } else if (showStatus) {
+    } else {
       setStatus(getLocaleStrings(uiLangSelect.value).status_no_models, true);
     }
   } catch (err) {
