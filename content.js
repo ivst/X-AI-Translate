@@ -574,6 +574,9 @@ function observeAutoTranslationTarget(el, shouldObserve) {
 function stopAutoTranslationObserver() {
   autoTranslationGeneration += 1;
   autoTranslationQueue.length = 0;
+  // A full rescan rebuilds result nodes; their old completion flags must not
+  // prevent the newly created nodes from being translated.
+  autoTranslationCompleted = new WeakMap();
   autoTranslationVisibleTargets = new WeakSet();
   if (autoTranslationObserver) {
     autoTranslationObserver.disconnect();
@@ -1015,7 +1018,6 @@ function refreshContentConfig(endpointChanged = false) {
       "provider", "model", "deepseekThinkingEnabled"
     ].some((key) => previous[key] !== currentConfig[key]);
     const forceInlineRefresh = !contentConfigLoaded || endpointRefreshPending;
-    if (endpointRefreshPending) autoTranslationCompleted = new WeakMap();
     contentConfigLoaded = true;
     endpointRefreshPending = false;
     if (shouldRunInlineTranslation && (forceInlineRefresh || inlineSettingsChanged)) {

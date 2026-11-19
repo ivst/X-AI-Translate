@@ -216,8 +216,8 @@ for (const [loader, provider, modelA, modelB] of catalogCases) {
   });
 }
 
-test("successful catalog refresh removes filtered selections, including an empty catalog", async () => {
-  const { context, el, fetches, select, answer } = await makeOptions();
+test("filtered selections require explicit replacement and an empty catalog allows saving with presets", async () => {
+  const { context, el, sync, fetches, select, answer } = await makeOptions();
   await select("openai");
   const first = await waitForFetch(fetches, () => true);
   answer(first, ["gpt-6-luna"]);
@@ -231,15 +231,62 @@ test("successful catalog refresh removes filtered selections, including an empty
   const second = await waitForFetch(fetches, (request) => request !== first);
   answer(second, ["gpt-image-2", "gpt-6-luna"]);
   await pending;
-  assert.deepEqual(el("model").options.map((option) => option.value), ["gpt-6-luna"]);
-  assert.equal(el("model").value, "gpt-6-luna");
+  assert.deepEqual(el("model").options.map((option) => option.value), ["", "gpt-6-luna"]);
+  assert.equal(el("model").value, "", "must choose a replacement explicitly");
+  assert.match(el("modelCatalogNotice").textContent, /gpt-image-2/);
+  await el("save").fire("click");
+  assert.equal(sync.provider, "googletranslate", "no implicit replacement is saved");
+  el("model").value = "gpt-6-luna";
+  el("model").fire("change");
+  assert.equal(el("modelCatalogNotice").style.display, "none");
 
   const empty = refresh({ force: true });
   const third = await waitForFetch(fetches, (request) => request !== first && request !== second);
   answer(third, ["gpt-image-2"]);
   await empty;
-  assert.deepEqual(el("model").options, []);
-  assert.equal(el("model").value, "");
-  assert.equal(el("model").disabled, true);
+  assert.deepEqual(el("model").options.map((option) => option.value), ["gpt-6-luna", "gpt-6.2-sol"]);
+  assert.equal(el("model").value, "gpt-6-luna");
+  assert.equal(el("model").disabled, false);
   assert.equal(el("modelCustom").style.display, "none");
+  assert.match(el("modelCatalogNotice").textContent, /unverified preset models/);
+  el("overlayDuration").value = "12";
+  await el("save").fire("click");
+  assert.equal(sync.overlayDuration, 12);
+  assert.equal(sync.model, "gpt-6-luna");
+  const savedStatus = el("status").textContent;
+  const fourth = await waitForFetch(fetches, (request) => ![first, second, third].includes(request));
+  answer(fourth, ["gpt-image-2"]);
+  await tick();
+  assert.equal(el("status").textContent, savedStatus, "background refresh does not overwrite save status");
+});
+
+test("late responses for an old API key cannot overwrite the newer model cache", async () => {
+  const { context, el, local, fetches, select, answer } = await makeOptions();
+  await select("openai");
+  const old = await waitForFetch(fetches, () => true);
+  el("apiKey").value = "new-key";
+  el("apiKey").fire("input");
+  const refresh = vm.runInContext("refreshProviderModels", context);
+  const pending = refresh({ force: true });
+  const current = await waitForFetch(fetches, (request) => request !== old);
+  answer(current, ["gpt-6-luna", "gpt-new-account"]);
+  await pending;
+  answer(old, ["gpt-old-account"]);
+  await tick();
+  assert.deepEqual(local.openai_models_cache_v2.models, ["gpt-6-luna", "gpt-new-account"]);
+  assert.equal(local.openai_models_cache_v2.keyFingerprint, createHash("sha256").update("new-key").digest("hex"));
+});
+
+test("empty OpenRouter free-only catalog offers only its known free preset", async () => {
+  const { el, local, fetches, select, sync } = await makeOptions();
+  local.apiKeyByProvider.openrouter = "router-key";
+  await select("openrouter");
+  const initial = await waitForFetch(fetches, () => true);
+  initial.resolve(new Response(JSON.stringify({ data: [{ id: "vendor/paid", pricing: { prompt: "1", completion: "0" } }] })));
+  await tick();
+  assert.equal(el("openrouterFreeOnly").checked, true);
+  assert.deepEqual(el("model").options.map((option) => option.value), ["openrouter/free"]);
+  assert.match(el("modelCatalogNotice").textContent, /unverified preset models/);
+  await el("save").fire("click");
+  assert.equal(sync.model, "openrouter/free");
 });

@@ -97,6 +97,7 @@ const apiUrlInput = document.getElementById("apiUrl");
 const apiKeyInput = document.getElementById("apiKey");
 const modelSelect = document.getElementById("model");
 const modelCustomInput = document.getElementById("modelCustom");
+const modelCatalogNoticeEl = document.getElementById("modelCatalogNotice");
 const apiUrlControl = document.getElementById("apiUrlControl");
 const apiKeyControl = document.getElementById("apiKeyControl");
 const modelControl = document.getElementById("modelControl");
@@ -676,7 +677,20 @@ function getModelLabel(modelId, provider) {
   return modelId;
 }
 
-function populateModels(models, selected, provider = providerSelect.value, { preserveUnlisted = false } = {}) {
+let modelCatalogNotice = null;
+
+function renderModelCatalogNotice() {
+  const strings = getLocaleStrings(uiLangSelect.value);
+  const messages = [];
+  if (modelCatalogNotice?.fallback) messages.push(strings.model_catalog_fallback);
+  if (modelCatalogNotice?.unavailable) {
+    messages.push(strings.model_catalog_unavailable.replace("{model}", () => modelCatalogNotice.unavailable));
+  }
+  modelCatalogNoticeEl.textContent = messages.join(" ");
+  modelCatalogNoticeEl.style.display = messages.length ? "block" : "none";
+}
+
+function populateModels(models, selected, provider = providerSelect.value, { preserveUnlisted = false, requireSelection = false } = {}) {
   // Preserve saved IDs when displaying presets, but never reinsert an ID
   // excluded by a successfully loaded, filtered catalog.
   if (preserveUnlisted && selected && !models.includes(selected) && provider !== "custom" && !isDirectProvider(provider)
@@ -686,6 +700,13 @@ function populateModels(models, selected, provider = providerSelect.value, { pre
   modelSelect.innerHTML = "";
   const hasModels = models.length > 0;
   if (hasModels) {
+    if (requireSelection && !models.includes(selected)) {
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.textContent = getLocaleStrings(uiLangSelect.value).model_catalog_select;
+      placeholder.disabled = true;
+      modelSelect.appendChild(placeholder);
+    }
     models.forEach((model) => {
       const option = document.createElement("option");
       option.value = model;
@@ -695,7 +716,7 @@ function populateModels(models, selected, provider = providerSelect.value, { pre
     modelSelect.style.display = "block";
     modelSelect.disabled = false;
     modelCustomInput.style.display = "none";
-    modelSelect.value = selected && models.includes(selected) ? selected : models[0];
+    modelSelect.value = models.includes(selected) ? selected : requireSelection ? "" : models[0];
   } else if (provider === "custom") {
     modelSelect.style.display = "none";
     modelSelect.disabled = true;
@@ -742,6 +763,8 @@ function setProviderControls(provider) {
 }
 
 function applyProviderDefaults(provider, currentModel) {
+  modelCatalogNotice = null;
+  renderModelCatalogNotice();
   const preset = PROVIDERS[provider] || PROVIDERS.custom;
   if (provider === "custom") {
     apiUrlInput.value = savedCustomApiUrl || "";
@@ -835,7 +858,7 @@ function loadOpenAICache() {
   });
 }
 
-async function getOpenAIModels(apiUrl, apiKey, forceRefresh = false) {
+async function getOpenAIModels(apiUrl, apiKey, forceRefresh = false, isCurrent = () => true) {
   const normalizedUrl = normalizeApiBaseUrl(apiUrl);
   if (!normalizedUrl) {
     throw new Error("API URL is required.");
@@ -854,7 +877,7 @@ async function getOpenAIModels(apiUrl, apiKey, forceRefresh = false) {
   }
   const models = await fetchOpenAIModels(normalizedUrl, apiKey);
   const ids = filterOpenAIModels(models);
-  chrome.storage.local.set({
+  if (isCurrent()) chrome.storage.local.set({
     [OPENAI_CACHE_KEY]: {
       ts: Date.now(),
       apiUrl: normalizedUrl,
@@ -896,7 +919,7 @@ function loadDeepSeekCache() {
   });
 }
 
-async function getDeepSeekModels(apiUrl, apiKey, forceRefresh = false) {
+async function getDeepSeekModels(apiUrl, apiKey, forceRefresh = false, isCurrent = () => true) {
   const normalizedUrl = normalizeApiBaseUrl(apiUrl);
   if (!normalizedUrl) {
     throw new Error("API URL is required.");
@@ -915,7 +938,7 @@ async function getDeepSeekModels(apiUrl, apiKey, forceRefresh = false) {
   }
   const models = await fetchDeepSeekModels(normalizedUrl, apiKey);
   const ids = filterDeepSeekModels(models);
-  chrome.storage.local.set({
+  if (isCurrent()) chrome.storage.local.set({
     [DEEPSEEK_CACHE_KEY]: {
       ts: Date.now(),
       apiUrl: normalizedUrl,
@@ -959,7 +982,7 @@ function loadClaudeCache() {
   });
 }
 
-async function getClaudeModels(apiUrl, apiKey, forceRefresh = false) {
+async function getClaudeModels(apiUrl, apiKey, forceRefresh = false, isCurrent = () => true) {
   const normalizedUrl = normalizeApiBaseUrl(apiUrl);
   if (!normalizedUrl) {
     throw new Error("API URL is required.");
@@ -978,7 +1001,7 @@ async function getClaudeModels(apiUrl, apiKey, forceRefresh = false) {
   }
   const models = await fetchClaudeModels(normalizedUrl, apiKey);
   const ids = filterClaudeModels(models);
-  chrome.storage.local.set({
+  if (isCurrent()) chrome.storage.local.set({
     [CLAUDE_CACHE_KEY]: {
       ts: Date.now(),
       apiUrl: normalizedUrl,
@@ -1044,7 +1067,7 @@ function loadGeminiCache() {
   });
 }
 
-async function getGeminiModels(apiUrl, apiKey, forceRefresh = false) {
+async function getGeminiModels(apiUrl, apiKey, forceRefresh = false, isCurrent = () => true) {
   const normalizedUrl = normalizeApiBaseUrl(apiUrl);
   if (!normalizedUrl) {
     throw new Error("API URL is required.");
@@ -1063,7 +1086,7 @@ async function getGeminiModels(apiUrl, apiKey, forceRefresh = false) {
   }
   const models = await fetchGeminiModels(normalizedUrl, apiKey);
   const ids = filterGeminiModels(models);
-  chrome.storage.local.set({
+  if (isCurrent()) chrome.storage.local.set({
     [GEMINI_CACHE_KEY]: {
       ts: Date.now(),
       apiUrl: normalizedUrl,
@@ -1111,7 +1134,7 @@ function loadYandexCache() {
   });
 }
 
-async function getYandexModels(apiUrl, apiKey, folderId, forceRefresh = false) {
+async function getYandexModels(apiUrl, apiKey, folderId, forceRefresh = false, isCurrent = () => true) {
   const normalizedUrl = normalizeApiBaseUrl(apiUrl);
   const cleanFolderId = (folderId || "").trim();
   if (!normalizedUrl) {
@@ -1132,7 +1155,7 @@ async function getYandexModels(apiUrl, apiKey, folderId, forceRefresh = false) {
   }
   const models = await fetchYandexModels(normalizedUrl, apiKey, cleanFolderId);
   const ids = filterYandexModels(models);
-  chrome.storage.local.set({
+  if (isCurrent()) chrome.storage.local.set({
     [YANDEX_CACHE_KEY]: {
       ts: Date.now(),
       apiUrl: normalizedUrl,
@@ -1214,7 +1237,7 @@ function loadOpenrouterCache() {
   });
 }
 
-async function getOpenrouterModels(apiKey, freeOnly, source, forceRefresh = false) {
+async function getOpenrouterModels(apiKey, freeOnly, source, forceRefresh = false, isCurrent = () => true) {
   const keyFingerprint = await getApiKeyFingerprint(apiKey);
   const cache = await loadOpenrouterCache();
   if (
@@ -1229,7 +1252,7 @@ async function getOpenrouterModels(apiKey, freeOnly, source, forceRefresh = fals
   }
   const models = await fetchOpenrouterModels(apiKey, source);
   const ids = filterOpenrouterModels(models, freeOnly);
-  chrome.storage.local.set({
+  if (isCurrent()) chrome.storage.local.set({
     [OPENROUTER_CACHE_KEY]: {
       ts: Date.now(),
       keyFingerprint,
@@ -1271,22 +1294,30 @@ async function refreshProviderModels({ force = false, showStatus = false } = {})
   const isCurrent = () => isCurrentProvider(provider, generation) && request === modelRequestGeneration;
   const selected = modelSelect.value;
   const loaders = {
-    openai: () => getOpenAIModels(apiUrl, key, force),
-    deepseek: () => getDeepSeekModels(apiUrl, key, force),
-    claude: () => getClaudeModels(apiUrl, key, force),
-    gemini: () => getGeminiModels(apiUrl, key, force),
-    yandexgpt: () => getYandexModels(apiUrl, key, folderId, force),
-    openrouter: () => getOpenrouterModels(key, freeOnly, source, force)
+    openai: () => getOpenAIModels(apiUrl, key, force, isCurrent),
+    deepseek: () => getDeepSeekModels(apiUrl, key, force, isCurrent),
+    claude: () => getClaudeModels(apiUrl, key, force, isCurrent),
+    gemini: () => getGeminiModels(apiUrl, key, force, isCurrent),
+    yandexgpt: () => getYandexModels(apiUrl, key, folderId, force, isCurrent),
+    openrouter: () => getOpenrouterModels(key, freeOnly, source, force, isCurrent)
   };
   if (!loaders[provider]) return;
   if (showStatus) setStatus(getLocaleStrings(uiLangSelect.value).status_refreshing, false);
   try {
     const models = await loaders[provider]();
     if (!isCurrent()) return;
-    populateModels(models, selected, provider);
+    // An empty filtered catalog is not evidence that a previously selected ID
+    // is safe. Offer only known presets, explicitly marked as unverified.
+    const available = models.length ? models : PROVIDERS[provider].models;
+    modelCatalogNotice = {
+      fallback: !models.length,
+      unavailable: available.includes(selected) ? "" : selected || modelCatalogNotice?.unavailable || ""
+    };
+    populateModels(available, selected, provider, { requireSelection: true });
+    renderModelCatalogNotice();
     if (models.length) {
       if (showStatus) setStatus(getLocaleStrings(uiLangSelect.value).status_models_updated, false);
-    } else {
+    } else if (showStatus) {
       setStatus(getLocaleStrings(uiLangSelect.value).status_no_models, true);
     }
   } catch (err) {
@@ -1421,7 +1452,13 @@ apiUrlInput.addEventListener("input", () => {
   if (providerSelect.value === "custom") savedCustomApiUrl = apiUrlInput.value.trim();
 });
 apiKeyInput.addEventListener("input", () => { ++modelRequestGeneration; });
-modelSelect.addEventListener("change", () => { ++modelRequestGeneration; });
+modelSelect.addEventListener("change", () => {
+  ++modelRequestGeneration;
+  if (modelCatalogNotice && modelSelect.value) {
+    modelCatalogNotice.unavailable = "";
+    renderModelCatalogNotice();
+  }
+});
 yandexFolderInput.addEventListener("input", () => { ++modelRequestGeneration; });
 modelCustomInput.addEventListener("input", () => {
   if (providerSelect.value === "custom") savedCustomModel = modelCustomInput.value.trim();
@@ -1432,6 +1469,10 @@ uiLangSelect.addEventListener("change", () => {
   const currentTarget = targetLangSelect.value;
   const currentSource = sourceLangSelect.value;
   applyTranslations(uiLang);
+  renderModelCatalogNotice();
+  if (modelSelect.options[0]?.value === "") {
+    modelSelect.options[0].textContent = getLocaleStrings(uiLang).model_catalog_select;
+  }
   applySetupNoteTranslations(uiLang);
   setProviderControls(providerSelect.value);
   buildLanguageOptions(targetLangSelect, uiLang, currentTarget);
@@ -1444,7 +1485,11 @@ openrouterFreeOnlyCheckbox.addEventListener("change", () => {
   chrome.storage.sync.set({ openrouterFreeOnly: openrouterFreeOnlyCheckbox.checked });
   if (providerSelect.value === "openrouter") {
     if (openrouterFreeOnlyCheckbox.checked) {
-      populateModels(PROVIDERS.openrouter.models, "", "openrouter");
+      const selected = modelSelect.value;
+      const presets = PROVIDERS.openrouter.models;
+      modelCatalogNotice = { fallback: false, unavailable: presets.includes(selected) ? "" : selected };
+      populateModels(presets, selected, "openrouter", { requireSelection: true });
+      renderModelCatalogNotice();
     }
     refreshProviderModels();
   }

@@ -82,7 +82,10 @@
     "status_set_yandex_key": "حدّد مفتاح YandexGPT أولًا.",
     "status_refreshing": "جارٍ تحديث النماذج...",
     "status_no_models": "لم يتم العثور على نماذج.",
-    "status_models_updated": "تم تحديث النماذج."
+    "status_models_updated": "تم تحديث النماذج.",
+    "model_catalog_fallback": "لم يُرجع الكتالوج نماذج مناسبة. تُعرض النماذج الافتراضية غير المؤكدة.",
+    "model_catalog_unavailable": "النموذج {model} غير متاح في القائمة. اختر نموذجًا آخر.",
+    "model_catalog_select": "اختر نموذجًا"
   },
   "zh": {
     "title": "AI Translate 设置",
@@ -126,7 +129,10 @@
     "status_set_yandex_key": "请先设置 YandexGPT API 密钥。",
     "status_refreshing": "正在刷新模型...",
     "status_no_models": "未返回模型。",
-    "status_models_updated": "模型已更新。"
+    "status_models_updated": "模型已更新。",
+    "model_catalog_fallback": "目录未返回合适的模型。显示未经验证的预设模型。",
+    "model_catalog_unavailable": "列表中没有模型 {model}。请选择其他模型。",
+    "model_catalog_select": "请选择模型"
   },
   "en": {
     "title": "AI Translate Settings",
@@ -170,7 +176,10 @@
     "status_set_yandex_key": "Set YandexGPT API key first.",
     "status_refreshing": "Refreshing models...",
     "status_no_models": "No models returned.",
-    "status_models_updated": "Models updated."
+    "status_models_updated": "Models updated.",
+    "model_catalog_fallback": "No eligible models returned. Showing unverified preset models.",
+    "model_catalog_unavailable": "Model {model} is not available in the list. Choose another model.",
+    "model_catalog_select": "Select a model"
   },
   "fr": {
     "title": "Paramètres AI Translate",
@@ -214,7 +223,10 @@
     "status_set_yandex_key": "Définissez d'abord la clé API YandexGPT.",
     "status_refreshing": "Actualisation des modèles...",
     "status_no_models": "Aucun modèle trouvé.",
-    "status_models_updated": "Modèles mis à jour."
+    "status_models_updated": "Modèles mis à jour.",
+    "model_catalog_fallback": "Aucun modèle compatible renvoyé. Les modèles prédéfinis affichés ne sont pas vérifiés.",
+    "model_catalog_unavailable": "Le modèle {model} est absent de la liste. Choisissez un autre modèle.",
+    "model_catalog_select": "Choisir un modèle"
   },
   "de": {
     "title": "AI Translate Einstellungen",
@@ -258,7 +270,10 @@
     "status_set_yandex_key": "Zuerst YandexGPT-API-Schlüssel setzen.",
     "status_refreshing": "Modelle werden aktualisiert...",
     "status_no_models": "Keine Modelle gefunden.",
-    "status_models_updated": "Modelle aktualisiert."
+    "status_models_updated": "Modelle aktualisiert.",
+    "model_catalog_fallback": "Keine geeigneten Modelle zurückgegeben. Ungeprüfte Standardmodelle werden angezeigt.",
+    "model_catalog_unavailable": "Das Modell {model} ist nicht in der Liste verfügbar. Wählen Sie ein anderes Modell.",
+    "model_catalog_select": "Modell auswählen"
   },
   "el": {
     "title": "Ρυθμίσεις AI Translate",
@@ -302,7 +317,10 @@
     "status_set_yandex_key": "Ορίστε πρώτα το κλειδί API YandexGPT.",
     "status_refreshing": "Ανανέωση μοντέλων...",
     "status_no_models": "Δεν βρέθηκαν μοντέλα.",
-    "status_models_updated": "Τα μοντέλα ενημερώθηκαν."
+    "status_models_updated": "Τα μοντέλα ενημερώθηκαν.",
+    "model_catalog_fallback": "Δεν επιστράφηκαν κατάλληλα μοντέλα. Εμφανίζονται μη επαληθευμένα προεπιλεγμένα μοντέλα.",
+    "model_catalog_unavailable": "Το μοντέλο {model} δεν είναι στη λίστα. Επιλέξτε άλλο μοντέλο.",
+    "model_catalog_select": "Επιλέξτε μοντέλο"
   },
   "he": {
     "title": "הגדרות AI Translate",
@@ -346,7 +364,10 @@
     "status_set_yandex_key": "יש להגדיר קודם מפתח YandexGPT.",
     "status_refreshing": "מרענן מודלים...",
     "status_no_models": "לא נמצאו מודלים.",
-    "status_models_updated": "המודלים עודכנו."
+    "status_models_updated": "המודלים עודכנו.",
+    "model_catalog_fallback": "לא התקבלו מודלים מתאימים. מוצגים מודלים מוגדרים מראש שלא אומתו.",
+    "model_catalog_unavailable": "המודל {model} אינו זמין ברשימה. בחרו מודל אחר.",
+    "model_catalog_select": "בחרו מודל"
   },
   "it": {
     "title": "Impostazioni AI Translate",
@@ -390,7 +411,10 @@
     "status_set_yandex_key": "Imposta prima la chiave API YandexGPT.",
     "status_refreshing": "Aggiornamento modelli...",
     "status_no_models": "Nessun modello trovato.",
-    "status_models_updated": "Modelli aggiornati."
+    "status_models_updated": "Modelli aggiornati.",
+    "model_catalog_fallback": "Nessun modello idoneo restituito. Sono mostrati modelli predefiniti non verificati.",
+    "model_catalog_unavailable": "Il modello {model} non è disponibile nell'elenco. Scegli un altro modello.",
+    "model_catalog_select": "Seleziona un modello"
   },
   "ja": {
     "title": "AI Translate 設定",
@@ -434,7 +458,10 @@
     "status_set_yandex_key": "先に YandexGPT API キーを設定してください。",
     "status_refreshing": "モデルを更新中...",
     "status_no_models": "モデルが返されませんでした。",
-    "status_models_updated": "モデルを更新しました。"
+    "status_models_updated": "モデルを更新しました。",
+    "model_catalog_fallback": "利用可能なモデルが返されませんでした。未確認のプリセットモデルを表示しています。",
+    "model_catalog_unavailable": "モデル {model} は一覧にありません。別のモデルを選択してください。",
+    "model_catalog_select": "モデルを選択"
   },
   "ko": {
     "title": "AI Translate 설정",
@@ -478,7 +505,10 @@
     "status_set_yandex_key": "먼저 YandexGPT API 키를 입력하세요.",
     "status_refreshing": "모델 목록을 새로고침하는 중...",
     "status_no_models": "반환된 모델이 없습니다.",
-    "status_models_updated": "모델이 업데이트되었습니다."
+    "status_models_updated": "모델이 업데이트되었습니다.",
+    "model_catalog_fallback": "적합한 모델이 반환되지 않았습니다. 확인되지 않은 기본 모델을 표시합니다.",
+    "model_catalog_unavailable": "모델 {model}이 목록에 없습니다. 다른 모델을 선택하세요.",
+    "model_catalog_select": "모델 선택"
   },
   "pt": {
     "title": "Configurações do AI Translate",
@@ -522,7 +552,10 @@
     "status_set_yandex_key": "Defina primeiro a chave API do YandexGPT.",
     "status_refreshing": "Atualizando modelos...",
     "status_no_models": "Nenhum modelo encontrado.",
-    "status_models_updated": "Modelos atualizados."
+    "status_models_updated": "Modelos atualizados.",
+    "model_catalog_fallback": "Nenhum modelo compatível retornado. Exibindo modelos predefinidos não verificados.",
+    "model_catalog_unavailable": "O modelo {model} não está disponível na lista. Escolha outro modelo.",
+    "model_catalog_select": "Selecione um modelo"
   },
   "ru": {
     "title": "Настройки AI Translate",
@@ -566,7 +599,10 @@
     "status_set_yandex_key": "Сначала укажите ключ YandexGPT.",
     "status_refreshing": "Обновление списка...",
     "status_no_models": "Модели не найдены.",
-    "status_models_updated": "Список обновлён."
+    "status_models_updated": "Список обновлён.",
+    "model_catalog_fallback": "Каталог не вернул подходящих моделей. Показаны резервные модели, доступность которых не подтверждена.",
+    "model_catalog_unavailable": "Модель {model} отсутствует в списке. Выберите другую модель.",
+    "model_catalog_select": "Выберите модель"
   },
   "es": {
     "title": "Configuración de AI Translate",
@@ -610,7 +646,10 @@
     "status_set_yandex_key": "Primero establece la clave API de YandexGPT.",
     "status_refreshing": "Actualizando modelos...",
     "status_no_models": "No se encontraron modelos.",
-    "status_models_updated": "Modelos actualizados."
+    "status_models_updated": "Modelos actualizados.",
+    "model_catalog_fallback": "No se devolvieron modelos compatibles. Se muestran modelos predefinidos sin verificar.",
+    "model_catalog_unavailable": "El modelo {model} no está disponible en la lista. Elige otro modelo.",
+    "model_catalog_select": "Selecciona un modelo"
   },
   "th": {
     "title": "การตั้งค่า AI Translate",
@@ -654,7 +693,10 @@
     "status_set_yandex_key": "ตั้งค่า YandexGPT API key ก่อน",
     "status_refreshing": "กำลังรีเฟรชโมเดล...",
     "status_no_models": "ไม่พบโมเดล",
-    "status_models_updated": "อัปเดตรายการโมเดลแล้ว"
+    "status_models_updated": "อัปเดตรายการโมเดลแล้ว",
+    "model_catalog_fallback": "ไม่พบโมเดลที่เหมาะสม กำลังแสดงโมเดลที่ตั้งไว้ล่วงหน้าซึ่งยังไม่ผ่านการตรวจสอบ",
+    "model_catalog_unavailable": "โมเดล {model} ไม่มีในรายการ โปรดเลือกโมเดลอื่น",
+    "model_catalog_select": "เลือกโมเดล"
   },
   "tr": {
     "title": "AI Translate Ayarları",
@@ -698,7 +740,10 @@
     "status_set_yandex_key": "Önce YandexGPT API anahtarını girin.",
     "status_refreshing": "Modeller yenileniyor...",
     "status_no_models": "Model bulunamadı.",
-    "status_models_updated": "Modeller güncellendi."
+    "status_models_updated": "Modeller güncellendi.",
+    "model_catalog_fallback": "Uygun model bulunamadı. Doğrulanmamış hazır modeller gösteriliyor.",
+    "model_catalog_unavailable": "{model} modeli listede yok. Başka bir model seçin.",
+    "model_catalog_select": "Model seçin"
   },
   "uk": {
     "title": "Налаштування AI Translate",
@@ -742,7 +787,10 @@
     "status_set_yandex_key": "Спочатку вкажіть ключ YandexGPT.",
     "status_refreshing": "Оновлення списку...",
     "status_no_models": "Моделі не знайдено.",
-    "status_models_updated": "Список оновлено."
+    "status_models_updated": "Список оновлено.",
+    "model_catalog_fallback": "Каталог не повернув відповідних моделей. Показано резервні моделі, доступність яких не підтверджено.",
+    "model_catalog_unavailable": "Модель {model} відсутня у списку. Виберіть іншу модель.",
+    "model_catalog_select": "Виберіть модель"
   }
 };
 
