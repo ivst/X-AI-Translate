@@ -555,7 +555,7 @@ function applySetupNoteTranslations(lang) {
   setupNoteIntro.textContent = providerSelect.value === "chrome"
     ? getLocaleStrings(lang).chrome_hint : directNote?.intro || strings.intro;
   setupNoteWarning.textContent = directNote?.warning || strings.warning;
-  setupNoteWarning.hidden = false;
+  setupNoteWarning.hidden = providerSelect.value === "chrome";
   setupNoteLinksLabel.textContent = strings.links;
   setupLinkOpenAI.textContent = "OpenAI";
   if (setupLinkClaude) {

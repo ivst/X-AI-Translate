@@ -476,7 +476,7 @@ async function translateInTab(text, sourceLang, targetLang, tabId) {
   if (!tabId) throw new Error("Chrome Built-in Translator requires a browser document. Use Quick Translate in the popup.");
   const payload = { action: "translateLocally", text, sourceLang, targetLang };
   const send = () => new Promise((resolve, reject) => {
-    chrome.tabs.sendMessage(tabId, payload, (response) => {
+    chrome.tabs.sendMessage(tabId, payload, { frameId: 0 }, (response) => {
       const error = chrome.runtime.lastError;
       if (error) reject(new Error(error.message));
       else resolve(response);
@@ -485,7 +485,10 @@ async function translateInTab(text, sourceLang, targetLang, tabId) {
   let response;
   try {
     response = await send();
-  } catch (_) {
+  } catch (error) {
+    // A closed port or another translation failure is not a missing receiver.
+    // Only re-inject for a missing top-frame content script.
+    if (!/receiving end does not exist/i.test(error?.message || "")) throw error;
     if (!await ensureContentScript(tabId)) throw new Error("Chrome Translator cannot access this page. Use Quick Translate in the popup.");
     response = await send();
   }

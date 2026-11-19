@@ -1,5 +1,10 @@
 // Shared by extension documents and isolated content scripts.
 (() => {
+  const LANGUAGE_DETECTION_CACHE_LIMIT = 128;
+  // Document-local LRU: entries contain only the sampled text and detector
+  // result. Share pending calls too, and never persist them to storage.
+  const detectionCache = new Map();
+
   function normalizeLanguage(code) {
     const base = String(code || "").toLowerCase().split(/[-_]/)[0];
     return base === "iw" ? "he" : base === "in" ? "id" : base;
@@ -12,19 +17,44 @@
 
   async function detectReliableLanguage(text) {
     if (!globalThis.chrome?.i18n?.detectLanguage || !String(text).trim()) return null;
+    const sample = String(text).slice(0, 4096);
+    const cached = detectionCache.get(sample);
+    if (cached) {
+      detectionCache.delete(sample);
+      detectionCache.set(sample, cached);
+      return cached.promise;
+    }
+    const entry = {};
+    entry.promise = detectLanguageSample(sample).then(({ language, cacheable }) => {
+      // Don't turn transient timeout/API failures into cached uncertainty.
+      if (!cacheable && detectionCache.get(sample) === entry) detectionCache.delete(sample);
+      return language;
+    });
+    detectionCache.set(sample, entry);
+    while (detectionCache.size > LANGUAGE_DETECTION_CACHE_LIMIT) {
+      detectionCache.delete(detectionCache.keys().next().value);
+    }
+    return entry.promise;
+  }
+
+  async function detectLanguageSample(sample) {
     let timeout;
     try {
       const result = await Promise.race([
-        chrome.i18n.detectLanguage(String(text).slice(0, 4096)),
+        chrome.i18n.detectLanguage(sample),
         new Promise((resolve) => { timeout = setTimeout(() => resolve(null), 1500); })
       ]);
-      if (!result?.isReliable || !Array.isArray(result.languages)) return null;
+      if (!result || !Array.isArray(result.languages)) return { language: null, cacheable: false };
+      if (!result.isReliable) return { language: null, cacheable: true };
       const best = [...result.languages].sort((a, b) => b.percentage - a.percentage)[0];
       const language = normalizeTranslatorLanguage(best?.language);
-      return best?.percentage >= 80 && /^(?:[a-z]{2,3}|zh-Hant)$/.test(language) && language !== "und"
-        ? language : null;
+      return {
+        language: best?.percentage >= 80 && /^(?:[a-z]{2,3}|zh-Hant)$/.test(language) && language !== "und"
+          ? language : null,
+        cacheable: true
+      };
     } catch (_) {
-      return null;
+      return { language: null, cacheable: false };
     } finally {
       clearTimeout(timeout);
     }

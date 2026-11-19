@@ -632,8 +632,8 @@ await call("clearTranslationCache");
 
 Object.assign(syncStore, { provider: "chrome", model: "chrome-translator", apiUrl: "" });
 let localRequest;
-chrome.tabs.sendMessage = (tabId, message, callback) => {
-  localRequest = { tabId, message };
+chrome.tabs.sendMessage = (tabId, message, options, callback) => {
+  localRequest = { tabId, message, options };
   callback({ ok: true, text: "On-device" });
 };
 fetchMock = async () => { throw new Error("Chrome provider must never use a cloud API"); };
@@ -641,9 +641,33 @@ const localUpdates = [];
 await call("streamTranslate", "original", (text, done) => localUpdates.push({ text, done }), { tabId: 42 });
 check(localRequest.tabId, 42, "Chrome provider routes to the originating tab");
 check(localRequest.message.action, "translateLocally", "Chrome provider uses the document bridge");
+check(localRequest.options.frameId, 0, "Chrome provider targets the main frame");
 check(localUpdates, [{ text: "On-device", done: true }], "Local provider completes stream");
-chrome.tabs.sendMessage = (_id, _message, callback) => callback({ ok: false, error: "Unsupported pair" });
+chrome.tabs.sendMessage = (_id, _message, _options, callback) => callback({ ok: false, error: "Unsupported pair" });
 await assert.rejects(call("streamTranslate", "original", () => {}, { tabId: 42 }), /Unsupported pair/);
 assertions++;
+
+let attempts = 0;
+const injectionsBefore = executedScripts.length;
+chrome.tabs.sendMessage = (tabId, _message, options, callback) => {
+  check(tabId, 43, "Fallback keeps originating tab");
+  check(options.frameId, 0, "Fallback keeps main frame");
+  if (++attempts === 1) {
+    chrome.runtime.lastError = { message: "Could not establish connection. Receiving end does not exist." };
+    callback();
+    chrome.runtime.lastError = null;
+  } else callback({ ok: true, text: "Recovered" });
+};
+check(await call("translateInTab", "original", "ja", "en", 43), "Recovered", "Missing receiver is re-injected");
+check(attempts, 2, "Missing receiver is retried once");
+check(executedScripts.length, injectionsBefore + 1, "Fallback injects the content script");
+chrome.tabs.sendMessage = (_id, _message, _options, callback) => {
+  chrome.runtime.lastError = { message: "The message port closed before a response was received." };
+  callback();
+  chrome.runtime.lastError = null;
+};
+await assert.rejects(call("translateInTab", "original", "ja", "en", 44), /message port closed/);
+assertions++;
+check(executedScripts.length, injectionsBefore + 1, "Closed port must not repeat translation");
 
 console.log(`PASS: ${assertions} assertions for background.js`);

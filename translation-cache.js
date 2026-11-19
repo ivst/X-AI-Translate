@@ -1,5 +1,7 @@
 // Cache is opt-in, local-only and bounded. The service worker is the sole writer.
 const TRANSLATION_CACHE_KEY = "translationCacheV1";
+// Bump when changing request identity semantics or the translation prompt.
+const TRANSLATION_CACHE_IDENTITY_VERSION = 1;
 const TRANSLATION_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const TRANSLATION_CACHE_MAX_ENTRIES = 100;
 const TRANSLATION_CACHE_MAX_BYTES = 256 * 1024;
@@ -27,7 +29,7 @@ async function translationCacheContext(config, text, targetLang, sourceLang, aut
     // Include all translation-affecting settings and the exact credential.
     // Store only a SHA-256 digest of the request identity, never the source/key.
     const input = JSON.stringify([
-      1, config.provider, normalizeApiBaseUrl(config.provider, config.apiUrl),
+      TRANSLATION_CACHE_IDENTITY_VERSION, config.provider, normalizeApiBaseUrl(config.provider, config.apiUrl),
       config.model, config.yandexFolderId, config.deepseekThinkingEnabled,
       sourceLang, targetLang, authToken, text
     ]);

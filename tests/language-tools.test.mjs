@@ -5,9 +5,9 @@ import { test } from "node:test";
 
 const source = await readFile(new URL("../language-tools.js", import.meta.url), "utf8");
 
-function tools({ result, translator, active = false } = {}) {
+function tools({ result, detect, translator, active = false } = {}) {
   const context = vm.createContext({
-    chrome: { i18n: { detectLanguage: async () => result } },
+    chrome: { i18n: { detectLanguage: detect || (async () => result) } },
     Translator: translator, navigator: { userActivation: { isActive: active } },
     setTimeout, clearTimeout
   });
@@ -26,6 +26,32 @@ test("language detection accepts reliable dominant languages and rejects uncerta
   assert.equal(await unknown.detectReliableLanguage("123"), null);
   const traditional = tools({ result: { isReliable: true, languages: [{ language: "zh-TW", percentage: 100 }] } });
   assert.equal(await traditional.detectReliableLanguage("繁體中文"), "zh-Hant");
+});
+
+test("language detection deduplicates in-flight and completed samples, evicts old entries", async () => {
+  let calls = 0;
+  const t = tools({ detect: async () => {
+    calls++;
+    return { isReliable: true, languages: [{ language: "de", percentage: 100 }] };
+  } });
+  assert.deepEqual(await Promise.all([t.detectReliableLanguage("same"), t.detectReliableLanguage("same")]), ["de", "de"]);
+  assert.equal(await t.detectReliableLanguage("same"), "de");
+  assert.equal(calls, 1);
+  for (let i = 0; i < 128; i++) await t.detectReliableLanguage("sample " + i);
+  await t.detectReliableLanguage("same");
+  assert.equal(calls, 130, "oldest sample is evicted from the bounded cache");
+});
+
+test("language detection retries transient failures but caches genuine uncertainty", async () => {
+  let calls = 0;
+  const t = tools({ detect: async () => {
+    if (++calls === 1) throw new Error("Temporary failure");
+    return { isReliable: false, languages: [{ language: "de", percentage: 60 }] };
+  } });
+  assert.equal(await t.detectReliableLanguage("mixed"), null);
+  assert.equal(await t.detectReliableLanguage("mixed"), null);
+  assert.equal(await t.detectReliableLanguage("mixed"), null);
+  assert.equal(calls, 2);
 });
 
 test("Chrome local provider uses the detected pair and releases its translator", async () => {
@@ -51,4 +77,6 @@ test("Chrome local provider reports unavailable API, pair, and activation withou
   await assert.rejects(tools({ translator: downloadable }).translateLocally("text", "en", "ru"), /user gesture/);
   assert.equal(await tools({ translator: downloadable, active: true }).translateLocally("text", "en", "ru"), "result");
   await assert.rejects(tools({ translator: downloadable }).translateLocally("text", "auto", "ru"), /reliably detect/);
+  const downloading = { ...downloadable, availability: async () => "downloading" };
+  await assert.rejects(tools({ translator: downloading }).translateLocally("text", "en", "ru"), /user gesture/);
 });

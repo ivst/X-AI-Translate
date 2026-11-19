@@ -625,6 +625,7 @@ test("Chrome local provider saves without a key, endpoint or model catalog", asy
   assert.equal(el("apiUrlControl").style.display, "none");
   assert.equal(el("apiKeyControl").style.display, "none");
   assert.equal(el("modelControl").style.display, "none");
+  assert.equal(el("setupNoteWarning").hidden, true, "keyless Chrome provider hides API key warning");
   el("translationCacheEnabled").checked = true;
   await el("save").fire("click");
   assert.equal(sync.provider, "chrome");
@@ -632,4 +633,6 @@ test("Chrome local provider saves without a key, endpoint or model catalog", asy
   assert.equal(sync.model, "chrome-translator");
   assert.equal(sync.translationCacheEnabled, true);
   assert.equal(fetches.length, 0);
+  await select("googletranslate");
+  assert.equal(el("setupNoteWarning").hidden, false, "warning is restored after provider switch");
 });
