@@ -40,7 +40,14 @@
     if (!String(text).trim()) return null;
     // Normalize for detection only (e.g. half-width ｶﾀｶﾅ). The translation
     // receives the original text, so formatting and compatibility forms stay intact.
-    const sample = String(text).normalize("NFKC").slice(0, 4096);
+    // Social posts often include link destinations (including emoji assets).
+    // They are not linguistic evidence: omit them from CLD/script analysis,
+    // retaining surrounding visible link labels and the original request.
+    const sample = String(text).normalize("NFKC")
+      .replace(/https?:\/\/[^\s<>()\[\]{}]+/giu, " ")
+      .trim()
+      .slice(0, 4096);
+    if (!/\p{L}/u.test(sample)) return null;
     if (!globalThis.chrome?.i18n?.detectLanguage) return detectDistinctiveScript(sample);
     const cached = detectionCache.get(sample);
     if (cached) {

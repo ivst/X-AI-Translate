@@ -96,6 +96,32 @@ test("short Japanese kana including half-width Katakana uses a safe script fallb
   assert.equal(await t.detectReliableLanguage("あ hello"), null, "one kana in mostly foreign text is insufficient");
 });
 
+test("emoji asset URLs and other link destinations are ignored only for language detection", async () => {
+  const raw = "ろりぽっぷむらさきさん[🍭](https://abs.twimg.com/emoji/v2/svg/1f36d.svg)[💜](https://abs.twimg.com/emoji/v2/svg/1f49c.svg)[🐰](https://abs.twimg.com/emoji/v2/svg/1f430.svg)";
+  let sample, pair, translatedInput;
+  const t = tools({
+    detect: async text => {
+      sample = text;
+      // Even a confident but incorrect Latin result must not be driven by URLs.
+      if (text.includes("https://")) return { isReliable: true, languages: [{ language: "en", percentage: 100 }] };
+      return { isReliable: false, languages: [{ language: "und", percentage: 100 }] };
+    },
+    translator: {
+      async availability(options) { pair = options; return "available"; },
+      async create() { return { translate: async text => { translatedInput = text; return "Lollipop"; }, destroy() {} }; }
+    }
+  });
+  assert.equal(await t.translateLocally(raw, "auto", "ru"), "Lollipop");
+  assert.equal(pair.sourceLanguage, "ja");
+  assert.equal(pair.targetLanguage, "ru");
+  assert.ok(sample.includes("ろりぽっぷむらさきさん"));
+  assert.ok(!sample.includes("https://"));
+  assert.equal(translatedInput, raw, "URLs are preserved for translation");
+  assert.equal(await t.detectReliableLanguage("こんにちは https://example.com/very-long-english-link"), "ja");
+  assert.equal(await t.detectReliableLanguage("https://example.com/english 🍭"), null, "URL and emoji alone carry no language evidence");
+  assert.equal(await t.detectReliableLanguage("[日本語](https://example.com)"), null, "Han-only visible text stays ambiguous");
+});
+
 test("Chrome local provider reports unavailable API, pair, and activation without fallback", async () => {
   await assert.rejects(tools().translateLocally("text", "en", "ru"), /unavailable/);
   const unavailable = tools({ translator: { availability: async () => "unavailable", create() { assert.fail(); } } });

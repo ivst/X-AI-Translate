@@ -127,6 +127,25 @@ test("popup local auto-detection translates the reported short Japanese string",
   assert.equal(messages.length, 0);
 });
 
+test("popup auto-detection ignores emoji asset links in the reported X post", async () => {
+  let pair, passedText;
+  const { el, messages, click } = makePopup({
+    translator: {
+      async availability(options) { pair = options; return "available"; },
+      async create() { return { translate: async text => { passedText = text; return "Лоллипоп"; }, destroy() {} }; }
+    }
+  });
+  const raw = "ろりぽっぷむらさきさん[🍭](https://abs.twimg.com/emoji/v2/svg/1f36d.svg)[💜](https://abs.twimg.com/emoji/v2/svg/1f49c.svg)[🐰](https://abs.twimg.com/emoji/v2/svg/1f430.svg)";
+  el("quickInput").value = raw;
+  el("quickFrom").value = "auto";
+  el("quickTo").value = "ru";
+  await click();
+  assert.equal(pair.sourceLanguage, "ja");
+  assert.equal(passedText, raw);
+  assert.equal(el("quickOutput").value, "Лоллипоп");
+  assert.equal(messages.length, 0);
+});
+
 test("popup cloud providers still send the correct language pair and incognito flag", async () => {
   const { el, messages, click } = makePopup({ provider: "openai", incognito: true });
   await click();
