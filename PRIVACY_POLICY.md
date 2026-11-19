@@ -29,6 +29,8 @@ API Keys and Storage
 - By default, API keys are stored locally in `chrome.storage.local`.
 - If you enable "Sync API keys across devices", API keys are stored in `chrome.storage.sync` and synchronized by your Chrome account.
 - Syncing keys across devices is optional and less secure than local-only storage.
+- API keys and translation history are restricted to trusted extension contexts;
+  content scripts receive only the settings needed to render translation controls.
 
 Data Sharing
 - Translation text is sent only to the API endpoint/provider you configured.

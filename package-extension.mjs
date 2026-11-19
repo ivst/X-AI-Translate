@@ -10,6 +10,7 @@ const outputPath = path.join(outputDir, `ai-translate-cws-v${manifest.version}.z
 const files = [
   "manifest.json",
   "background.js",
+  "model-config.js",
   "content.js",
   "i18n.js",
   "options.html",

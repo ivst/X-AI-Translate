@@ -303,6 +303,7 @@
             <label for="model" data-i18n="model">Model</label>
             <select id="model"></select>
             <input id="modelCustom" type="text" placeholder="Custom model id" data-i18n-placeholder="model_custom_placeholder" />
+            <div id="modelCatalogNotice" class="hint" role="status" aria-live="polite" style="display:none;"></div>
           </div>
           <div id="deepseekControls" style="display:none;">
             <div class="row" style="align-items:center;">
@@ -434,6 +435,7 @@
     </div>
 
     <script src="i18n.js"></script>
+    <script src="model-config.js"></script>
     <script src="options.js"></script>
   </body>
 </html>

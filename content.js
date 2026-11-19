@@ -57,7 +57,7 @@ const AUTO_TRANSLATION_MAX_CONCURRENT = 2;
 const autoTranslationQueue = [];
 let autoTranslationVisibleTargets = new WeakSet();
 const autoTranslationPending = new WeakMap();
-const autoTranslationCompleted = new WeakMap();
+let autoTranslationCompleted = new WeakMap();
 let autoTranslationObserver = null;
 let autoTranslationActive = 0;
 let autoTranslationGeneration = 0;
@@ -74,6 +74,9 @@ let overlayLoadingTimer = null;
 let overlayLoadingRequestId = null;
 let overlayLoadingFrame = 0;
 let extensionContextLost = false;
+let configRequestGeneration = 0;
+let contentConfigLoaded = false;
+let endpointRefreshPending = false;
 
 function isInlineTranslationHost(hostname) {
   const host = String(hostname || "").toLowerCase();
@@ -571,6 +574,9 @@ function observeAutoTranslationTarget(el, shouldObserve) {
 function stopAutoTranslationObserver() {
   autoTranslationGeneration += 1;
   autoTranslationQueue.length = 0;
+  // A full rescan rebuilds result nodes; their old completion flags must not
+  // prevent the newly created nodes from being translated.
+  autoTranslationCompleted = new WeakMap();
   autoTranslationVisibleTargets = new WeakSet();
   if (autoTranslationObserver) {
     autoTranslationObserver.disconnect();
@@ -993,9 +999,40 @@ function showGlobalOverlay(text, finalize) {
   }
 }
 
+function refreshContentConfig(endpointChanged = false) {
+  endpointRefreshPending ||= endpointChanged;
+  const generation = ++configRequestGeneration;
+  sendMessageSafe({ action: "getContentConfig" }, (err, response) => {
+    if (err || !response?.ok || generation !== configRequestGeneration) return;
+    const previous = currentConfig;
+    currentConfig = { ...DEFAULT_CONFIG, ...response.config };
+    if (!currentConfig.selectionShortcut) {
+      hideSelectionButton();
+    } else if (selectionButton) {
+      const strings = getLocaleStrings(currentConfig.uiLang || currentConfig.targetLang);
+      selectionButton.title = strings.selectionTitle;
+    }
+    const inlineSettingsChanged = [
+      "targetLang", "uiLang", "enableXInlineTranslation", "enableYoutubeInlineTranslation",
+      "enableXAutoTranslation", "enableYoutubeAutoTranslation", "sourceLang",
+      "provider", "model", "deepseekThinkingEnabled"
+    ].some((key) => previous[key] !== currentConfig[key]);
+    const forceInlineRefresh = !contentConfigLoaded || endpointRefreshPending;
+    contentConfigLoaded = true;
+    endpointRefreshPending = false;
+    if (shouldRunInlineTranslation && (forceInlineRefresh || inlineSettingsChanged)) {
+      updateInlineObserver(true);
+    }
+  });
+}
+
 if (isExtensionContextValid()) {
   try {
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+      if (message?.action === "contentConfigChanged") {
+        refreshContentConfig(message.endpointChanged === true);
+        return;
+      }
       if (message?.action === "aiTranslatePing") {
         if (typeof sendResponse === "function") {
           sendResponse({ ok: true });
@@ -1047,41 +1084,7 @@ if (isExtensionContextValid()) {
       }
     });
 
-    chrome.storage.sync.get(DEFAULT_CONFIG, (data) => {
-      currentConfig = { ...DEFAULT_CONFIG, ...data };
-      updateInlineObserver(true);
-    });
-
-    chrome.storage.onChanged.addListener((changes, areaName) => {
-      if (areaName !== "sync") return;
-      const next = { ...currentConfig };
-      Object.keys(changes).forEach((key) => {
-        next[key] = changes[key].newValue;
-      });
-      currentConfig = next;
-      if (!currentConfig.selectionShortcut) {
-        hideSelectionButton();
-      } else if (selectionButton) {
-        const strings = getLocaleStrings(currentConfig.uiLang || currentConfig.targetLang);
-        selectionButton.title = strings.selectionTitle;
-      }
-      const inlineSettingsChanged = [
-        "targetLang",
-        "uiLang",
-        "enableXInlineTranslation",
-        "enableYoutubeInlineTranslation",
-        "enableXAutoTranslation",
-        "enableYoutubeAutoTranslation",
-        "sourceLang",
-        "provider",
-        "apiUrl",
-        "model",
-        "deepseekThinkingEnabled"
-      ].some((key) => Object.prototype.hasOwnProperty.call(changes, key));
-      if (shouldRunInlineTranslation && inlineSettingsChanged) {
-        updateInlineObserver(true);
-      }
-    });
+    refreshContentConfig();
   } catch (err) {
     // Ignore when extension context is invalidated.
   }

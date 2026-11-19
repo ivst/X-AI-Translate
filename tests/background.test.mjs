@@ -3,17 +3,23 @@ import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 
 const source = await readFile(new URL("../background.js", import.meta.url), "utf8");
+const modelSource = await readFile(new URL("../model-config.js", import.meta.url), "utf8");
 const optionsSource = await readFile(new URL("../options.js", import.meta.url), "utf8");
 const localStore = {};
 const syncStore = {};
 const listeners = {};
 const executedScripts = [];
+const storageAccessLevels = [];
 let fetchMock = async () => {
   throw new Error("Unexpected fetch call");
 };
 
 function storageArea(store) {
   return {
+    setAccessLevel(options) {
+      storageAccessLevels.push(options.accessLevel);
+      return Promise.resolve();
+    },
     get(defaults = {}, callback) {
       let result;
       if (typeof defaults === "string") {
@@ -64,6 +70,7 @@ const chrome = {
     }
   },
   storage: {
+    onChanged: chromeEvent("storageChanged"),
     local: storageArea(localStore),
     sync: storageArea(syncStore)
   },
@@ -78,6 +85,10 @@ const chrome = {
 };
 
 const context = vm.createContext({
+  importScripts(name) {
+    assert.equal(name, "model-config.js");
+    vm.runInContext(modelSource, context);
+  },
   AbortController,
   chrome,
   clearTimeout,
@@ -118,6 +129,46 @@ function check(actual, expected, message) {
   assertions += 1;
 }
 
+check(storageAccessLevels, ["TRUSTED_CONTEXTS", "TRUSTED_CONTEXTS"], "Both storage areas are restricted");
+Object.assign(syncStore, {
+  apiKey: "legacy-secret",
+  apiKeyByProvider: { openai: "secret" },
+  apiUrl: "https://example.test/secret",
+  targetLang: "ru",
+  enableXAutoTranslation: true
+});
+const contentResponse = await new Promise((resolve) => {
+  check(listeners.message({ action: "getContentConfig" }, { tab: { id: 1 } }, resolve),
+    true, "Content settings request keeps the response channel open");
+});
+check(contentResponse.ok, true, "Content settings returned");
+check(contentResponse.config.targetLang, "ru", "Content settings retain the selected language");
+check(contentResponse.config.enableXAutoTranslation, true, "Content settings retain auto translation");
+check(Object.keys(contentResponse.config).some((key) => /apiKey|apiUrl|history|lastTranslation/i.test(key)),
+  false, "No keys, endpoint or translation history exposed to content scripts");
+for (const key of Object.keys(syncStore)) delete syncStore[key];
+
+const nativeUrls = {
+  openai: "https://api.openai.com/v1", claude: "https://api.anthropic.com",
+  gemini: "https://generativelanguage.googleapis.com/v1beta/openai", deepseek: "https://api.deepseek.com"
+};
+const nativeConfig = (provider, model, extra = {}) => ({ provider, model, apiUrl: nativeUrls[provider] || "https://example.test/v1", ...extra });
+const migrate = (config) => call("migrateModelConfig", config);
+for (const [provider, oldModel, newModel] of [
+  ["openai", "gpt-4o-mini", "gpt-6-luna"],
+  ["claude", "claude-3-5-haiku-latest", "claude-haiku-5-5"],
+  ["gemini", "gemini-2.0-flash-lite", "gemini-3.5-flash-lite"],
+  ["deepseek", "deepseek-v4-flash", "deepseek-flash"],
+  ["custom", "gpt-4o-mini", "gpt-4o-mini"]
+]) {
+  check(call("resolveModelForProvider", migrate(nativeConfig(provider, oldModel))), newModel, `${provider} saved model migration`);
+  check(call("resolveModelForProvider", migrate(nativeConfig(provider, oldModel, { modelMigrationVersion: 1 }))), oldModel, `${provider} explicitly saved ID is preserved`);
+}
+check(migrate(nativeConfig("openai", "gpt-4o-mini", { apiUrl: "https://example.test/v1" })).model, "gpt-4o-mini", "Compatible endpoint model is preserved");
+const lunaBody = call("buildTranslateRequestBody", migrate(nativeConfig("openai", "gpt-4o-mini")), "Hello", "ru", "en", true);
+check(lunaBody.reasoning_effort, "none", "GPT-6 Luna disables reasoning for translation");
+check(lunaBody.model, "gpt-6-luna", "Luna is used for legacy OpenAI model");
+
 check(call("isUnsupportedTabUrl", "chrome://settings"), true, "Chrome pages are blocked");
 check(call("isUnsupportedTabUrl", "https://example.com"), false, "Web pages are allowed");
 check(call("getGoogleLanguageCode", "he"), "iw", "Google Hebrew alias");
@@ -138,33 +189,33 @@ check(
   "Claude messages URL"
 );
 check(
-  call("resolveModelForProvider", { provider: "deepseek", model: "deepseek-chat" }),
-  "deepseek-v4-flash",
+  call("resolveModelForProvider", migrate(nativeConfig("deepseek", "deepseek-chat"))),
+  "deepseek-flash",
   "DeepSeek retired alias"
 );
 const legacyChatBody = call(
   "buildTranslateRequestBody",
-  { provider: "deepseek", model: "deepseek-chat", deepseekThinkingEnabled: true },
+  migrate(nativeConfig("deepseek", "deepseek-chat", { deepseekThinkingEnabled: true })),
   "こんにちは",
   "ru",
   "ja",
   false
 );
-check(legacyChatBody.model, "deepseek-v4-flash", "Legacy chat uses DeepSeek V4 Flash");
+check(legacyChatBody.model, "deepseek-flash", "Legacy chat uses DeepSeek V4 Flash");
 check(legacyChatBody.thinking.type, "disabled", "Legacy chat preserves non-thinking semantics");
 const legacyReasonerBody = call(
   "buildTranslateRequestBody",
-  { provider: "deepseek", model: "deepseek-reasoner", deepseekThinkingEnabled: false },
+  migrate(nativeConfig("deepseek", "deepseek-reasoner", { deepseekThinkingEnabled: false })),
   "こんにちは",
   "ru",
   "ja",
   false
 );
-check(legacyReasonerBody.model, "deepseek-v4-flash", "Legacy reasoner uses DeepSeek V4 Flash");
+check(legacyReasonerBody.model, "deepseek-flash", "Legacy reasoner uses DeepSeek V4 Flash");
 check(legacyReasonerBody.thinking.type, "enabled", "Legacy reasoner preserves thinking semantics");
 const currentFlashBody = call(
   "buildTranslateRequestBody",
-  { provider: "deepseek", model: "deepseek-v4-flash", deepseekThinkingEnabled: true },
+  { provider: "deepseek", model: "deepseek-flash", deepseekThinkingEnabled: true },
   "こんにちは",
   "ru",
   "ja",
@@ -172,32 +223,38 @@ const currentFlashBody = call(
 );
 check(currentFlashBody.thinking.type, "enabled", "Current DeepSeek models respect the user setting");
 
-let migratedDeepSeek = await call("migrateLegacyDeepSeekConfig", {
+Object.assign(syncStore, nativeConfig("deepseek", "deepseek-reasoner", { deepseekThinkingEnabled: false, modelMigrationVersion: 0 }));
+let migratedDeepSeek = await call("migrateLegacyModelConfig", {
   provider: "deepseek",
+  apiUrl: nativeUrls.deepseek,
   model: "deepseek-reasoner",
   deepseekThinkingEnabled: false
 });
-check(migratedDeepSeek.model, "deepseek-v4-flash", "Legacy reasoner configuration is migrated");
+check(migratedDeepSeek.model, "deepseek-flash", "Legacy reasoner configuration is migrated");
 check(migratedDeepSeek.deepseekThinkingEnabled, true, "Reasoner migration enables thinking");
-check(syncStore.model, "deepseek-v4-flash", "DeepSeek migration is persisted");
+check(syncStore.model, "deepseek-flash", "DeepSeek migration is persisted");
 check(syncStore.deepseekThinkingEnabled, true, "Persisted reasoner migration enables thinking");
 
-migratedDeepSeek = await call("migrateLegacyDeepSeekConfig", {
+Object.assign(syncStore, nativeConfig("deepseek", "deepseek-chat", { deepseekThinkingEnabled: true, modelMigrationVersion: 0 }));
+migratedDeepSeek = await call("migrateLegacyModelConfig", {
   provider: "deepseek",
+  apiUrl: nativeUrls.deepseek,
   model: "deepseek-chat",
   deepseekThinkingEnabled: true
 });
 check(migratedDeepSeek.deepseekThinkingEnabled, false, "Chat migration disables thinking");
 
+Object.assign(syncStore, nativeConfig("deepseek", "deepseek-reasoner", { deepseekThinkingEnabled: false, modelMigrationVersion: 0 }));
 const originalSyncSet = chrome.storage.sync.set;
 chrome.storage.sync.set = () => Promise.reject(new Error("Sync quota exceeded"));
 try {
-  migratedDeepSeek = await call("migrateLegacyDeepSeekConfig", {
+  migratedDeepSeek = await call("migrateLegacyModelConfig", {
     provider: "deepseek",
+    apiUrl: nativeUrls.deepseek,
     model: "deepseek-reasoner",
     deepseekThinkingEnabled: false
   });
-  check(migratedDeepSeek.model, "deepseek-v4-flash", "Storage failure keeps the migrated model in memory");
+  check(migratedDeepSeek.model, "deepseek-flash", "Storage failure keeps the migrated model in memory");
   check(migratedDeepSeek.deepseekThinkingEnabled, true, "Storage failure keeps reasoner thinking enabled");
 } finally {
   chrome.storage.sync.set = originalSyncSet;
@@ -389,57 +446,34 @@ check(typeof listeners.message, "function", "Runtime listener registered");
 check(typeof listeners.contextMenuClicked, "function", "Context menu listener registered");
 check(typeof listeners.command, "function", "Keyboard command listener registered");
 
-const deepSeekOptionsStart = optionsSource.indexOf("const DEEPSEEK_LEGACY_MODEL_CONFIG");
+const deepSeekOptionsStart = optionsSource.indexOf("async function migrateLegacyModelConfig");
 const deepSeekOptionsEnd = optionsSource.indexOf("const PROVIDERS");
-assert.ok(
-  deepSeekOptionsStart >= 0 && deepSeekOptionsEnd > deepSeekOptionsStart,
-  "Options DeepSeek migration helper is present"
-);
-assertions += 1;
-const deepSeekOptionsSyncStore = {};
+const deepSeekOptionsSyncStore = nativeConfig("deepseek", "deepseek-reasoner", { deepseekThinkingEnabled: false });
 const deepSeekOptionsContext = vm.createContext({
-  chrome: {
-    storage: {
-      sync: storageArea(deepSeekOptionsSyncStore)
-    }
-  }
+  URL,
+  chrome: { storage: { sync: storageArea(deepSeekOptionsSyncStore) } }
 });
-vm.runInContext(optionsSource.slice(deepSeekOptionsStart, deepSeekOptionsEnd), deepSeekOptionsContext, {
-  filename: "options-deepseek-migration.js"
-});
-const migrateOptionsDeepSeek = vm.runInContext("migrateLegacyDeepSeekConfig", deepSeekOptionsContext);
-const migratedOptionsReasoner = migrateOptionsDeepSeek({
-  provider: "deepseek",
-  model: "deepseek-reasoner",
-  deepseekThinkingEnabled: false
-});
-check(migratedOptionsReasoner.model, "deepseek-v4-flash", "Options migrate legacy reasoner model");
+vm.runInContext(modelSource, deepSeekOptionsContext);
+vm.runInContext(optionsSource.slice(deepSeekOptionsStart, deepSeekOptionsEnd), deepSeekOptionsContext);
+const migrateOptionsDeepSeek = vm.runInContext("migrateLegacyModelConfig", deepSeekOptionsContext);
+const migratedOptionsReasoner = await migrateOptionsDeepSeek({ ...deepSeekOptionsSyncStore });
+check(migratedOptionsReasoner.model, "deepseek-flash", "Options migrate legacy reasoner model");
 check(migratedOptionsReasoner.deepseekThinkingEnabled, true, "Options preserve reasoner thinking mode");
-check(deepSeekOptionsSyncStore.model, "deepseek-v4-flash", "Options persist the migrated model");
+check(deepSeekOptionsSyncStore.model, "deepseek-flash", "Options persist the migrated model");
 
 const deepSeekFilterStart = optionsSource.indexOf("function filterDeepSeekModels");
 const deepSeekFilterEnd = optionsSource.indexOf("function loadDeepSeekCache");
-assert.ok(
-  deepSeekFilterStart >= 0 && deepSeekFilterEnd > deepSeekFilterStart,
-  "Options DeepSeek model filter is present"
-);
-assertions += 1;
 const deepSeekFilterContext = vm.createContext({});
-vm.runInContext(optionsSource.slice(deepSeekFilterStart, deepSeekFilterEnd), deepSeekFilterContext, {
-  filename: "options-deepseek-filter.js"
-});
+vm.runInContext(modelSource, deepSeekFilterContext);
+vm.runInContext(optionsSource.slice(deepSeekFilterStart, deepSeekFilterEnd), deepSeekFilterContext);
 const filterDeepSeekModels = vm.runInContext("filterDeepSeekModels", deepSeekFilterContext);
-const filteredDeepSeekModels = Array.from(filterDeepSeekModels([
+check(Array.from(filterDeepSeekModels([
   { id: "deepseek-chat" },
   { id: "deepseek-reasoner" },
   { id: "deepseek-v4-flash" },
+  { id: "deepseek-flash" },
   { id: "deepseek-v4-pro" }
-]));
-check(
-  filteredDeepSeekModels,
-  ["deepseek-v4-flash", "deepseek-v4-pro"],
-  "Options hide retired DeepSeek aliases"
-);
+])), ["deepseek-chat", "deepseek-flash", "deepseek-reasoner", "deepseek-v4-flash", "deepseek-v4-pro"], "Options preserve advertised DeepSeek IDs");
 
 const keyHelpersStart = optionsSource.indexOf("function getKeyByProviderFromStore");
 const keyHelpersEnd = optionsSource.indexOf("function getLanguageDisplayName");
@@ -478,7 +512,7 @@ replaceStore(optionLocalStore, {
   apiKeyByProvider: { openai: "stale-local-key" },
   apiKey: ""
 });
-let migratedOptions = optionCall("migrateLegacyKeyData", optionSyncStore, optionLocalStore);
+let migratedOptions = await optionCall("migrateLegacyKeyData", optionSyncStore, optionLocalStore);
 check(migratedOptions.syncData.apiKeyByProvider.openai, "new-sync-key", "Synced key wins during startup migration");
 check(Object.keys(optionLocalStore.apiKeyByProvider), [], "Startup sync migration clears local key map");
 
@@ -491,7 +525,7 @@ replaceStore(optionLocalStore, {
   apiKeyByProvider: { openai: "stale-local-key" },
   apiKey: ""
 });
-migratedOptions = optionCall("migrateLegacyKeyData", optionSyncStore, optionLocalStore);
+migratedOptions = await optionCall("migrateLegacyKeyData", optionSyncStore, optionLocalStore);
 check(migratedOptions.syncData.apiKeyByProvider.openai, "", "Explicitly cleared synced key remains cleared");
 check(Object.keys(optionLocalStore.apiKeyByProvider), [], "Cleared sync state removes stale local copy");
 

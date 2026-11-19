@@ -49,9 +49,8 @@ jobs:
             xargs -0 -n1 node -e \
               'JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"))'
 
-      - name: Run background tests
-        if: ${{ hashFiles('tests/background.test.mjs') != '' }}
-        run: node tests/background.test.mjs
+      - name: Run extension tests
+        run: node --test tests/*.test.mjs
 
       - name: Build extension package
         run: node package-extension.mjs
