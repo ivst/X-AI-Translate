@@ -1325,10 +1325,10 @@ function scheduleCatalogRefresh() {
   }, 350);
 }
 
-function applyCatalogModels(models, selected, provider) {
+function applyCatalogModels(models, selected, provider, { requested = true } = {}) {
   const available = models.length ? models : PROVIDERS[provider].models;
   modelCatalogNotice = {
-    fallback: !models.length,
+    fallback: requested && !models.length,
     unavailable: available.includes(selected) ? "" : selected || modelCatalogNotice?.unavailable || ""
   };
   populateModels(available, selected, provider, { requireSelection: true });
@@ -1385,7 +1385,7 @@ async function refreshProviderModels({ force = false, showStatus = false } = {})
     if (!isCurrent()) return;
     // An empty filtered catalog is not evidence that a previously selected ID
     // is safe. Offer only known presets, explicitly marked as unverified.
-    applyCatalogModels(models, selected, provider);
+    applyCatalogModels(models, selected, provider, { requested: Boolean(key) });
     if (models.length) {
       if (showStatus) setStatus(getLocaleStrings(uiLangSelect.value).status_models_updated, false);
     } else if (showStatus) {
@@ -1426,6 +1426,7 @@ async function initializeOptions() {
   const uiLang = data.uiLang || defaultConfig.uiLang;
   buildUiLanguageOptions(uiLangSelect);
   uiLangSelect.value = uiLang;
+  renderModelCatalogNotice();
   setProviderControls(provider);
   buildLanguageOptions(targetLangSelect, uiLang);
   buildLanguageOptions(sourceLangSelect, uiLang);
@@ -1525,18 +1526,26 @@ providerSelect.addEventListener("change", async () => {
   }
 });
 
+// Invalidate immediately so a stale catalog can never be saved, but request
+// the new catalog only when a field is committed (blur/Enter) instead of on
+// every keystroke, which would query providers with partial credentials.
 apiUrlInput.addEventListener("input", () => {
   if (providerSelect.value === "custom") savedCustomApiUrl = apiUrlInput.value.trim();
-  else scheduleCatalogRefresh();
+  else invalidateModelCatalog();
 });
-apiKeyInput.addEventListener("input", scheduleCatalogRefresh);
+apiUrlInput.addEventListener("change", () => {
+  if (providerSelect.value !== "custom") scheduleCatalogRefresh();
+});
+apiKeyInput.addEventListener("input", () => invalidateModelCatalog());
+apiKeyInput.addEventListener("change", scheduleCatalogRefresh);
 modelSelect.addEventListener("change", () => {
   if (modelCatalogNotice && modelSelect.value) {
     modelCatalogNotice.unavailable = "";
     renderModelCatalogNotice();
   }
 });
-yandexFolderInput.addEventListener("input", scheduleCatalogRefresh);
+yandexFolderInput.addEventListener("input", () => invalidateModelCatalog());
+yandexFolderInput.addEventListener("change", scheduleCatalogRefresh);
 modelCustomInput.addEventListener("input", () => {
   if (providerSelect.value === "custom") savedCustomModel = modelCustomInput.value.trim();
 });

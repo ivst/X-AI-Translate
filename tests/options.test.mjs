@@ -61,14 +61,22 @@ async function waitForCatalog(el) {
   assert.fail("Catalog did not finish loading");
 }
 
-async function makeOptions() {
+async function makeOptions({ sync: syncOverrides = {}, local: localOverrides = {}, expectReady = true } = {}) {
   const elements = new Map();
   const el = (id) => {
     if (!elements.has(id)) elements.set(id, new Element(id));
     return elements.get(id);
   };
-  const sync = { provider: "googletranslate", apiUrl: "https://translate.googleapis.com", model: "google-translate" };
-  const local = { apiKeyByProvider: { openai: "openai-key", claude: "claude-key", deepseek: "deepseek-key" } };
+  const sync = {
+    provider: "googletranslate",
+    apiUrl: "https://translate.googleapis.com",
+    model: "google-translate",
+    ...syncOverrides
+  };
+  const local = {
+    apiKeyByProvider: { openai: "openai-key", claude: "claude-key", deepseek: "deepseek-key" },
+    ...localOverrides
+  };
   const localReads = [];
   const fetches = [];
   const area = (store, reads = []) => ({
@@ -106,7 +114,7 @@ async function makeOptions() {
   });
   for (const script of scripts) vm.runInContext(script, context);
   await tick();
-  assert.equal(el("save").disabled, false, "settings initialize");
+  if (expectReady) assert.equal(el("save").disabled, false, "settings initialize");
   const select = (provider) => {
     el("provider").value = provider;
     return el("provider").fire("change");
@@ -333,6 +341,8 @@ test("credential edits invalidate previous account models and block persistence 
   await el("save").fire("click");
   assert.equal(sync.provider, "googletranslate");
   assert.equal(local.apiKeyByProvider.openai, "openai-key");
+  assert.equal(fetches.length, 1, "no catalog request before the key is committed");
+  el("apiKey").fire("change");
   const fresh = await waitForFetch(fetches, (request) => request !== initial);
   assert.equal(fresh.options.headers.Authorization, "Bearer new-key");
   answer(fresh, ["gpt-new-account"]);
@@ -360,6 +370,8 @@ test("endpoint edits do not reuse an old catalog when the new endpoint fails", a
   el("apiUrl").fire("input");
   assert.equal(el("save").disabled, true);
   assert.deepEqual(el("model").options, []);
+  assert.equal(fetches.length, 1, "no catalog request before the endpoint is committed");
+  el("apiUrl").fire("change");
   const fresh = await waitForFetch(fetches, (request) => request !== initial);
   assert.equal(fresh.url, "https://other.example/v1/models");
   fresh.reject(new Error("Offline"));
@@ -450,4 +462,24 @@ test("failed silent OpenRouter refresh preserves save status but manual refresh 
   assert.equal(el("status").textContent, "Network unavailable");
   assert.notEqual(el("status").style.color, savedColor);
   assert.equal(el("model").value, "openrouter/free");
+});
+
+test("missing API key offers presets without an unverified-catalog warning", async () => {
+  const { el, local, fetches, select } = await makeOptions();
+  delete local.apiKeyByProvider.openai;
+  await select("openai");
+  await tick();
+  assert.equal(fetches.length, 0, "no catalog request without credentials");
+  assert.deepEqual(el("model").options.map((option) => option.value), ["gpt-6-luna", "gpt-6.2-sol"]);
+  assert.equal(el("model").value, "gpt-6-luna");
+  assert.equal(el("modelCatalogNotice").style.display, "none");
+  assert.equal(el("save").disabled, false);
+});
+
+test("catalog notice is localized on the first render", async () => {
+  const { el } = await makeOptions({
+    sync: { provider: "openai", apiUrl: "https://api.openai.com/v1", model: "gpt-6-luna", uiLang: "ru" },
+    expectReady: false
+  });
+  assert.match(el("modelCatalogNotice").textContent, /^Обновление списка/);
 });
