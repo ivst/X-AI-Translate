@@ -52,6 +52,7 @@ let isMouseSelecting = false;
 let streamSeq = 0;
 const inlineStreams = new Map();
 const inlineProcessedTexts = new WeakMap();
+const inlineLanguageDetection = new WeakMap();
 const INLINE_STREAM_TIMEOUT_MS = 45000;
 const AUTO_TRANSLATION_MAX_CONCURRENT = 2;
 const autoTranslationQueue = [];
@@ -426,9 +427,14 @@ function dominantScript(text) {
   return { script: maxKey, count: maxVal, total, buckets };
 }
 
-function shouldShowButton(text, targetLang) {
+function shouldShowButton(text, targetLang, el) {
   const normalized = text.replace(/\s+/g, " ").trim();
   if (!normalized) return false;
+  const detected = el && inlineLanguageDetection.get(el);
+  if (detected?.text === text && detected.language) {
+    return globalThis.AITranslateLanguage.normalizeLanguage(detected.language)
+      !== globalThis.AITranslateLanguage.normalizeLanguage(targetLang);
+  }
 
   const latinTargets = new Set(["en", "fr", "de", "es", "pt", "it", "tr"]);
   if (latinTargets.has(targetLang)) {
@@ -528,7 +534,7 @@ function isAutoTranslationEnabledForHost() {
 
 function getAutoTranslationSignature(el, text) {
   const normalizedText = String(text || "").trim();
-  if (!normalizedText || !shouldShowButton(normalizedText, currentConfig.targetLang)) {
+  if (!normalizedText || !shouldShowButton(normalizedText, currentConfig.targetLang, el)) {
     return "";
   }
   return JSON.stringify([
@@ -753,7 +759,29 @@ function enhanceInlineText(el) {
     return;
   }
 
-  const shouldTranslate = shouldShowButton(text, currentConfig.targetLang);
+  // Wait for local language detection before creating controls or enqueuing
+  // automatic translation. In particular, Latin/Cyrillic text may be foreign
+  // even when it uses the same script as the target language.
+  if (text && globalThis.AITranslateLanguage && chrome.i18n?.detectLanguage) {
+    const detection = inlineLanguageDetection.get(el);
+    if (detection?.text !== text) {
+      const pending = { text, language: null, pending: true };
+      inlineLanguageDetection.set(el, pending);
+      removeExisting();
+      inlineProcessedTexts.delete(el);
+      observeAutoTranslationTarget(el, false);
+      globalThis.AITranslateLanguage.detectReliableLanguage(text).then((language) => {
+        if (inlineLanguageDetection.get(el) !== pending) return;
+        pending.language = language;
+        pending.pending = false;
+        if (el.isConnected && el.textContent?.trim() === text) enhanceInlineText(el);
+      });
+      return;
+    }
+    if (detection.pending) return;
+  }
+
+  const shouldTranslate = shouldShowButton(text, currentConfig.targetLang, el);
   const showButton = buttonEnabled && shouldTranslate;
   const shouldAutoTranslate = autoEnabled && shouldTranslate;
   observeAutoTranslationTarget(el, shouldAutoTranslate);
@@ -1029,6 +1057,16 @@ function refreshContentConfig(endpointChanged = false) {
 if (isExtensionContextValid()) {
   try {
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+      if (message?.action === "translateLocally" && _sender.id === chrome.runtime.id) {
+        if (typeof message.text !== "string" || !message.text.trim() || !globalThis.AITranslateLanguage) {
+          sendResponse({ ok: false, error: "Local translation is unavailable." });
+          return;
+        }
+        globalThis.AITranslateLanguage.translateLocally(message.text, message.sourceLang, message.targetLang)
+          .then((text) => sendResponse({ ok: true, text }))
+          .catch((err) => sendResponse({ ok: false, error: err.message || String(err) }));
+        return true;
+      }
       if (message?.action === "contentConfigChanged") {
         refreshContentConfig(message.endpointChanged === true);
         return;

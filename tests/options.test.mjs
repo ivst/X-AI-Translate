@@ -100,7 +100,7 @@ async function makeOptions({ sync: syncOverrides = {}, local: localOverrides = {
       documentElement: {}
     },
     chrome: {
-      runtime: { getManifest: () => ({ version: "0.3.3" }) },
+      runtime: { getManifest: () => ({ version: "0.4.0" }) },
       storage: { sync: area(sync), local: area(local, localReads) }
     },
     fetch(url, options) {
@@ -617,4 +617,19 @@ test("a deferred refresh does not survive a provider switch", async () => {
   await switched;
   await tick();
   assert.deepEqual(el("model").options.map((option) => option.value), ["claude-haiku-5-5"]);
+});
+
+test("Chrome local provider saves without a key, endpoint or model catalog", async () => {
+  const { el, sync, fetches, select } = await makeOptions();
+  await select("chrome");
+  assert.equal(el("apiUrlControl").style.display, "none");
+  assert.equal(el("apiKeyControl").style.display, "none");
+  assert.equal(el("modelControl").style.display, "none");
+  el("translationCacheEnabled").checked = true;
+  await el("save").fire("click");
+  assert.equal(sync.provider, "chrome");
+  assert.equal(sync.apiUrl, "");
+  assert.equal(sync.model, "chrome-translator");
+  assert.equal(sync.translationCacheEnabled, true);
+  assert.equal(fetches.length, 0);
 });

@@ -423,8 +423,10 @@ clearErrorBtn.addEventListener("click", () => {
   });
 });
 
-quickTranslateBtn.addEventListener("click", () => {
+quickTranslateBtn.addEventListener("click", async () => {
   const text = (quickInput.value || "").trim();
+  const sourceLang = quickFromSelect.value;
+  const targetLang = quickToSelect.value;
   if (!text) {
     quickOutput.value = getLocaleStrings(currentUiLang).quick_empty || "Enter text to translate.";
     saveQuickState();
@@ -435,6 +437,33 @@ quickTranslateBtn.addEventListener("click", () => {
   quickOutput.value = getLocaleStrings(currentUiLang).quick_translating || "Translating...";
   saveQuickState();
 
+  // The local Translator API only exists in documents, not the service
+  // worker. This explicit button click may also authorize the first download.
+  try {
+    const config = await storageSync?.get({ provider: "googletranslate" });
+    if (config?.provider === "chrome") {
+      try {
+        quickOutput.value = await globalThis.AITranslateLanguage.translateLocally(
+          text, sourceLang, targetLang,
+          (progress) => {
+            quickOutput.value = `${getLocaleStrings(currentUiLang).quick_translating || "Translating..."} ${Math.round(progress * 100)}%`;
+          }
+        );
+      } catch (err) {
+        quickOutput.value = `${getLocaleStrings(currentUiLang).quick_error || "Error"}: ${err.message || String(err)}`;
+      } finally {
+        quickTranslateBtn.disabled = false;
+        saveQuickState();
+      }
+      return;
+    }
+  } catch (err) {
+    quickTranslateBtn.disabled = false;
+    quickOutput.value = `${getLocaleStrings(currentUiLang).quick_error || "Error"}: ${err.message || String(err)}`;
+    saveQuickState();
+    return;
+  }
+
   const runtime = getRuntimeSafe();
   if (!runtime?.sendMessage) {
     quickTranslateBtn.disabled = false;
@@ -442,12 +471,20 @@ quickTranslateBtn.addEventListener("click", () => {
     saveQuickState();
     return;
   }
+  // Popup messages have no sender.tab in the worker. Resolve incognito from
+  // the current window, and conservatively bypass the cache if unavailable.
+  let incognito = true;
+  try {
+    incognito = Boolean(chrome.extension?.inIncognitoContext
+      || (await chrome.windows.getCurrent()).incognito);
+  } catch (_) {}
   runtime.sendMessage(
     {
       action: "translateText",
       text,
-      sourceLang: quickFromSelect.value,
-      targetLang: quickToSelect.value
+      sourceLang,
+      targetLang,
+      incognito
     },
     (response) => {
       quickTranslateBtn.disabled = false;

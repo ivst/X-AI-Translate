@@ -4,6 +4,7 @@ import vm from "node:vm";
 import { test } from "node:test";
 
 const source = await readFile(new URL("../content.js", import.meta.url), "utf8");
+const languageSource = await readFile(new URL("../language-tools.js", import.meta.url), "utf8");
 
 test("content scripts use the settings message channel and ignore stale responses", () => {
   const requests = [];
@@ -135,4 +136,49 @@ test("completed auto-translations are requested again after inline settings rebu
   assert.equal(third.length, 3, "toggling buttons must not leave a blank translation");
   finish(third[2], "Hello once more");
   assert.equal(container.querySelector(".ai-translate-result").textContent, "Hello once more");
+});
+
+test("same-script foreign language detection controls inline buttons and waits for confidence", async () => {
+  const children = [];
+  const requests = [];
+  let resolveDetection;
+  const container = {
+    appendChild(node) { children.push(node); },
+    querySelectorAll(selector) {
+      return children.filter((node) => selector === "[data-ai-translate]"
+        ? node.dataset.aiTranslate : `.${node.className}` === selector);
+    },
+    querySelector(selector) { return this.querySelectorAll(selector)[0] || null; }
+  };
+  const tweet = {
+    textContent: "Guten Morgen, wie geht es Ihnen?", isConnected: true, parentElement: container,
+    closest(selector) { return selector === '[data-testid="tweetText"]' ? this : null; }
+  };
+  function createElement() {
+    const node = {
+      style: {}, dataset: {}, classList: { add() {}, remove() {}, contains() { return false; } },
+      addEventListener() {}, remove() { children.splice(children.indexOf(node), 1); }
+    };
+    return node;
+  }
+  const context = vm.createContext({
+    chrome: {
+      i18n: { detectLanguage: () => new Promise(resolve => { resolveDetection = resolve; }) },
+      runtime: {
+        id: "extension", lastError: null, onMessage: { addListener() {} },
+        sendMessage(message, callback) { requests.push({ message, callback }); }
+      }
+    },
+    window: { location: { hostname: "x.com" }, addEventListener() {} },
+    document: { documentElement: {}, addEventListener() {}, querySelectorAll() { return [tweet]; }, createElement },
+    MutationObserver: class { observe() {} disconnect() {} },
+    setTimeout, clearTimeout
+  });
+  vm.runInContext(languageSource, context);
+  vm.runInContext(source, context);
+  requests[0].callback({ ok: true, config: { targetLang: "en", enableXInlineTranslation: true } });
+  assert.equal(children.length, 0, "no buttons before the detector settles");
+  resolveDetection({ isReliable: true, languages: [{ language: "de", percentage: 100 }] });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.ok(container.querySelector(".ai-translate-btn"), "German text is offered for translation into English");
 });

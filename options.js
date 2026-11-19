@@ -17,6 +17,7 @@
   enableXAutoTranslation: false,
   enableYoutubeAutoTranslation: false,
   syncApiKeys: false,
+  translationCacheEnabled: false,
   openrouterFreeOnly: true,
   openrouterSource: "user",
   deepseekThinkingEnabled: false,
@@ -65,6 +66,13 @@ const PROVIDERS = {
     label: "Google Translate (free)",
     apiUrl: "https://translate.googleapis.com",
     models: ["google-translate"],
+    direct: true,
+    requiresApiKey: false
+  },
+  chrome: {
+    label: "Chrome Built-in Translator (local)",
+    apiUrl: "",
+    models: ["chrome-translator"],
     direct: true,
     requiresApiKey: false
   },
@@ -137,6 +145,8 @@ const setupLinkYandex = document.getElementById("setupLinkYandex");
 const syncApiKeysCheckbox = document.getElementById("syncApiKeys");
 const syncApiKeysLabel = document.getElementById("syncApiKeysLabel");
 const syncApiKeysHelp = document.getElementById("syncApiKeysHelp");
+const translationCacheCheckbox = document.getElementById("translationCacheEnabled");
+const clearTranslationCacheBtn = document.getElementById("clearTranslationCache");
 
 let savedCustomApiUrl = "";
 let savedCustomModel = "";
@@ -499,7 +509,25 @@ const DIRECT_PROVIDER_HINT_I18N = {
 };
 
 function getLocaleStrings(lang) {
-  return window.AITranslateI18n.getOptionsStrings(lang);
+  const extra = {
+    en: {
+      translation_cache: "Cache translations locally (24-hour reuse)",
+      translation_cache_hint: "Optional: stores cloud translation results on this device, not separate source text or raw API keys. Disabling and saving clears the cache.",
+      translation_cache_clear: "Clear translation cache",
+      translation_cache_cleared: "Translation cache cleared.",
+      translation_cache_failed: "Could not clear translation cache.",
+      chrome_hint: "Local desktop Chrome 138+. No API key or cloud fallback. First use of a language pair may require clicking Translate on the page or in Quick Translate to download models. Some sites or devices may not support the API."
+    },
+    ru: {
+      translation_cache: "Локальный кэш переводов (повторное использование в течение 24 часов)",
+      translation_cache_hint: "По желанию: результаты облачных переводов хранятся на этом устройстве, без отдельных копий исходного текста и исходных ключей API. При отключении и сохранении кэш очищается.",
+      translation_cache_clear: "Очистить кэш переводов",
+      translation_cache_cleared: "Кэш переводов очищен.",
+      translation_cache_failed: "Не удалось очистить кэш переводов.",
+      chrome_hint: "Локальный перевод в Chrome 138+ на ПК. Без ключа API и облачного резерва. При первом использовании языковой пары может понадобиться нажать кнопку перевода на странице или в быстром переводе для загрузки модели. Не все сайты и устройства поддерживают API."
+    }
+  };
+  return { ...window.AITranslateI18n.getOptionsStrings(lang), ...extra.en, ...extra[lang] };
 }
 
 function applyTranslations(lang) {
@@ -524,7 +552,8 @@ function applySetupNoteTranslations(lang) {
   const syncStrings = SYNC_KEYS_I18N[lang] || SYNC_KEYS_I18N.en;
   const directNote = DIRECT_PROVIDER_SETUP_NOTE_I18N[providerSelect.value]?.[lang]
     || DIRECT_PROVIDER_SETUP_NOTE_I18N[providerSelect.value]?.en;
-  setupNoteIntro.textContent = directNote?.intro || strings.intro;
+  setupNoteIntro.textContent = providerSelect.value === "chrome"
+    ? getLocaleStrings(lang).chrome_hint : directNote?.intro || strings.intro;
   setupNoteWarning.textContent = directNote?.warning || strings.warning;
   setupNoteWarning.hidden = false;
   setupNoteLinksLabel.textContent = strings.links;
@@ -734,7 +763,7 @@ function isDirectProvider(provider) {
 function setProviderControls(provider) {
   const preset = PROVIDERS[provider] || PROVIDERS.custom;
   const isDirect = Boolean(preset.direct);
-  const isGoogle = provider === "googletranslate";
+  const noEndpoint = provider === "googletranslate" || provider === "chrome";
   const uiLang = uiLangSelect?.value || "en";
   const strings = getLocaleStrings(uiLang);
   const apiUrlLabel = document.getElementById("apiUrlLabel");
@@ -745,7 +774,7 @@ function setProviderControls(provider) {
     ? "api_base_url_placeholder_deepl"
     : "api_base_url_placeholder";
 
-  apiUrlControl.style.display = isGoogle ? "none" : "block";
+  apiUrlControl.style.display = noEndpoint ? "none" : "block";
   apiKeyControl.style.display = preset.requiresApiKey === false ? "none" : "block";
   modelControl.style.display = isDirect ? "none" : "block";
   deepseekControls.style.display = provider === "deepseek" ? "block" : "none";
@@ -757,6 +786,7 @@ function setProviderControls(provider) {
   providerHint.textContent = DIRECT_PROVIDER_HINT_I18N[provider]?.[uiLang]
     || DIRECT_PROVIDER_HINT_I18N[provider]?.en
     || "";
+  if (provider === "chrome") providerHint.textContent = strings.chrome_hint;
   providerHint.style.display = isDirect ? "block" : "none";
 }
 
@@ -1381,6 +1411,7 @@ function updateSettingsControls() {
   openrouterFreeOnlyCheckbox.disabled = settingsBusy || keyLoadPending;
   openrouterSourceSelect.disabled = settingsBusy || keyLoadPending;
   yandexFolderInput.disabled = settingsBusy || keyLoadPending;
+  translationCacheCheckbox.disabled = settingsBusy || keyLoadPending;
   // Busy states always end by re-enabling the form, so this is the one place
   // where a refresh postponed by that state can safely run.
   settleDeferredCatalogRefresh();
@@ -1461,6 +1492,7 @@ async function initializeOptions() {
   savedModelsByProvider = { ...data.modelByProvider, [provider]: data.model };
   storedSyncApiKeys = Boolean(data.syncApiKeys);
   syncApiKeysCheckbox.checked = Boolean(data.syncApiKeys);
+  translationCacheCheckbox.checked = Boolean(data.translationCacheEnabled);
   openrouterFreeOnlyCheckbox.checked =
     typeof data.openrouterFreeOnly === "boolean"
       ? data.openrouterFreeOnly
@@ -1663,7 +1695,7 @@ saveButton.addEventListener("click", async () => {
   const syncApiKeys = syncApiKeysCheckbox.checked;
   const config = {
     provider,
-    apiUrl: normalizeProviderApiUrl(provider, apiUrlInput.value),
+    apiUrl: provider === "chrome" ? "" : normalizeProviderApiUrl(provider, apiUrlInput.value),
     model: modelValue,
     modelMigrationVersion: MODEL_MIGRATION_VERSION,
     modelByProvider: { ...savedModelsByProvider, [provider]: modelValue },
@@ -1680,12 +1712,13 @@ saveButton.addEventListener("click", async () => {
     enableXAutoTranslation: enableXAutoTranslationCheckbox.checked,
     enableYoutubeAutoTranslation: enableYoutubeAutoTranslationCheckbox.checked,
     syncApiKeys,
+    translationCacheEnabled: translationCacheCheckbox.checked,
     openrouterFreeOnly: openrouterFreeOnlyCheckbox.checked,
     openrouterSource: openrouterSourceSelect.value,
     deepseekThinkingEnabled: deepseekThinkingCheckbox.checked,
     yandexFolderId: yandexFolderInput.value.trim()
   };
-  if (!config.apiUrl || (!isDirectProvider(provider) && !config.model)) {
+  if ((provider !== "chrome" && !config.apiUrl) || (!isDirectProvider(provider) && !config.model)) {
     setStatus(getLocaleStrings(uiLangSelect.value).status_required, true);
     return;
   }
@@ -1719,5 +1752,18 @@ saveButton.addEventListener("click", async () => {
     updateSettingsControls();
   }
   if (saved) refreshProviderModels({ force: true });
+});
+
+clearTranslationCacheBtn.addEventListener("click", async () => {
+  clearTranslationCacheBtn.disabled = true;
+  try {
+    const response = await chrome.runtime.sendMessage({ action: "clearTranslationCache" });
+    const strings = getLocaleStrings(uiLangSelect.value);
+    setStatus(response?.ok ? strings.translation_cache_cleared : strings.translation_cache_failed, !response?.ok);
+  } catch (_) {
+    setStatus(getLocaleStrings(uiLangSelect.value).translation_cache_failed, true);
+  } finally {
+    clearTranslationCacheBtn.disabled = false;
+  }
 });
 
