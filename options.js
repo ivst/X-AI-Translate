@@ -764,6 +764,7 @@ function applyProviderDefaults(provider, currentModel) {
   cancelScheduledCatalogRefresh();
   catalogPending = false;
   pendingCatalogSelection = null;
+  catalogFieldsDirty = false;
   modelCatalogNotice = null;
   const preset = PROVIDERS[provider] || PROVIDERS.custom;
   if (provider === "custom") {
@@ -1294,6 +1295,7 @@ let catalogPending = false;
 let pendingCatalogSelection = null;
 let catalogRefreshTimer = null;
 let deferredCatalogRefresh = null;
+let catalogFieldsDirty = false;
 
 function hasModelCatalog(provider) {
   return Boolean(PROVIDERS[provider] && !isDirectProvider(provider) && provider !== "custom");
@@ -1324,6 +1326,23 @@ function scheduleCatalogRefresh() {
     catalogRefreshTimer = null;
     refreshProviderModels();
   }, 350);
+}
+
+// Credential edits are transactional: the list is invalidated on the first
+// keystroke, but the provider is only queried once a field is committed. The
+// dirty flag makes committing idempotent (Enter followed by blur must not
+// request the catalog twice) and guarantees a commit even when the native
+// `change` event is skipped because the value was reverted before blur.
+function markCatalogDirty() {
+  if (!hasModelCatalog(providerSelect.value) || catalogFieldsDirty) return;
+  catalogFieldsDirty = true;
+  invalidateModelCatalog();
+}
+
+function commitCatalogFields() {
+  if (!catalogFieldsDirty) return;
+  catalogFieldsDirty = false;
+  scheduleCatalogRefresh();
 }
 
 function applyCatalogModels(models, selected, provider, { requested = true } = {}) {
@@ -1556,28 +1575,25 @@ providerSelect.addEventListener("change", async () => {
 // every keystroke, which would query providers with partial credentials.
 apiUrlInput.addEventListener("input", () => {
   if (providerSelect.value === "custom") savedCustomApiUrl = apiUrlInput.value.trim();
-  else invalidateModelCatalog();
+  else markCatalogDirty();
 });
-apiUrlInput.addEventListener("change", () => {
-  if (providerSelect.value !== "custom") scheduleCatalogRefresh();
-});
-apiKeyInput.addEventListener("input", () => invalidateModelCatalog());
-apiKeyInput.addEventListener("change", scheduleCatalogRefresh);
+apiKeyInput.addEventListener("input", markCatalogDirty);
 modelSelect.addEventListener("change", () => {
   if (modelCatalogNotice && modelSelect.value) {
     modelCatalogNotice.unavailable = "";
     renderModelCatalogNotice();
   }
 });
-yandexFolderInput.addEventListener("input", () => invalidateModelCatalog());
-yandexFolderInput.addEventListener("change", scheduleCatalogRefresh);
-// Text inputs only emit `change` when they lose focus, so Enter has to commit
-// the field explicitly to match the documented blur/Enter behavior.
+yandexFolderInput.addEventListener("input", markCatalogDirty);
+// Text inputs only emit `change` when they lose focus and only if the value
+// changed, so Enter and blur commit the dirty state explicitly.
 for (const input of [apiKeyInput, apiUrlInput, yandexFolderInput]) {
+  input.addEventListener("change", commitCatalogFields);
+  input.addEventListener("blur", commitCatalogFields);
   input.addEventListener("keydown", (event) => {
     if (event?.key !== "Enter") return;
     event.preventDefault?.();
-    scheduleCatalogRefresh();
+    commitCatalogFields();
   });
 }
 modelCustomInput.addEventListener("input", () => {
@@ -1674,6 +1690,10 @@ saveButton.addEventListener("click", async () => {
   }
   settingsBusy = true;
   ++modelRequestGeneration;
+  // The generation bump cancels any in-flight catalog refresh, whose cleanup
+  // can no longer run. Settle its pending state here so a failed save cannot
+  // leave the model dropdown disabled; a successful save re-refreshes below.
+  catalogPending = false;
   updateSettingsControls();
   let saved = false;
   try {

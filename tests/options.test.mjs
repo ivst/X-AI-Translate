@@ -535,3 +535,65 @@ test("a refresh requested while the form is busy runs when it frees up", async (
   await tick();
   assert.equal(el("save").disabled, false);
 });
+
+test("reverting a credential edit before blur restores the verified catalog", async () => {
+  const { el, fetches, select, answer } = await makeOptions();
+  await select("openai");
+  const initial = await waitForFetch(fetches, () => true);
+  answer(initial, ["gpt-6-luna"]);
+  await tick();
+  el("apiKey").value = "openai-key2";
+  el("apiKey").fire("input");
+  assert.deepEqual(el("model").options, []);
+  assert.equal(el("save").disabled, true);
+  el("apiKey").value = "openai-key";
+  el("apiKey").fire("input");
+  el("apiKey").fire("blur");
+  await waitForCatalog(el);
+  assert.deepEqual(el("model").options.map((option) => option.value), ["gpt-6-luna"]);
+  assert.equal(el("model").value, "gpt-6-luna");
+  assert.equal(fetches.length, 1, "the scoped cache restores the list without a request");
+});
+
+test("a failed save during a catalog refresh leaves the model dropdown usable", async () => {
+  const { el, context, fetches, select, answer } = await makeOptions();
+  await select("openai");
+  const initial = await waitForFetch(fetches, () => true);
+  answer(initial, ["gpt-6-luna"]);
+  await tick();
+  const refresh = vm.runInContext("refreshProviderModels", context);
+  const pendingRefresh = refresh({ force: true });
+  const refreshing = await waitForFetch(fetches, (request) => request !== initial);
+  vm.runInContext('chrome.storage.sync.set = () => Promise.reject(new Error("Quota exceeded"))', context);
+  await el("save").fire("click");
+  assert.match(el("status").textContent, /Quota exceeded/);
+  answer(refreshing, ["gpt-6-luna"]);
+  await pendingRefresh;
+  await tick();
+  assert.equal(el("save").disabled, false);
+  assert.equal(el("model").disabled, false, "the canceled refresh must not strand the dropdown");
+  assert.deepEqual(el("model").options.map((option) => option.value), ["gpt-6-luna"]);
+});
+
+test("Enter and the following blur do not commit the catalog twice", async () => {
+  const { el, context, fetches, select, answer } = await makeOptions();
+  await select("openai");
+  const initial = await waitForFetch(fetches, () => true);
+  answer(initial, ["gpt-6-luna"]);
+  await tick();
+  el("apiKey").value = "new-key";
+  el("apiKey").fire("input");
+  el("apiKey").fire("keydown", { key: "Enter" });
+  const fresh = await waitForFetch(fetches, (request) => request !== initial);
+  answer(fresh, ["gpt-6-luna"]);
+  await tick();
+  const generation = vm.runInContext("modelRequestGeneration", context);
+  el("apiKey").fire("change");
+  el("apiKey").fire("blur");
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(vm.runInContext("modelRequestGeneration", context), generation,
+    "the already committed value must not be invalidated again");
+  assert.equal(vm.runInContext("catalogPending", context), false);
+  assert.deepEqual(el("model").options.map((option) => option.value), ["gpt-6-luna"]);
+  assert.equal(fetches.length, 2, "the committed value is not requested again");
+});
