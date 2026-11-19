@@ -33,7 +33,7 @@ class Element {
   addEventListener(name, listener) { this.listeners[name] = listener; }
   setAttribute() {}
   removeAttribute() {}
-  fire(name) { return this.listeners[name]?.(); }
+  fire(name, event) { return this.listeners[name]?.(event); }
 }
 
 function deferred() {
@@ -61,14 +61,22 @@ async function waitForCatalog(el) {
   assert.fail("Catalog did not finish loading");
 }
 
-async function makeOptions() {
+async function makeOptions({ sync: syncOverrides = {}, local: localOverrides = {}, expectReady = true } = {}) {
   const elements = new Map();
   const el = (id) => {
     if (!elements.has(id)) elements.set(id, new Element(id));
     return elements.get(id);
   };
-  const sync = { provider: "googletranslate", apiUrl: "https://translate.googleapis.com", model: "google-translate" };
-  const local = { apiKeyByProvider: { openai: "openai-key", claude: "claude-key", deepseek: "deepseek-key" } };
+  const sync = {
+    provider: "googletranslate",
+    apiUrl: "https://translate.googleapis.com",
+    model: "google-translate",
+    ...syncOverrides
+  };
+  const local = {
+    apiKeyByProvider: { openai: "openai-key", claude: "claude-key", deepseek: "deepseek-key" },
+    ...localOverrides
+  };
   const localReads = [];
   const fetches = [];
   const area = (store, reads = []) => ({
@@ -106,7 +114,7 @@ async function makeOptions() {
   });
   for (const script of scripts) vm.runInContext(script, context);
   await tick();
-  assert.equal(el("save").disabled, false, "settings initialize");
+  if (expectReady) assert.equal(el("save").disabled, false, "settings initialize");
   const select = (provider) => {
     el("provider").value = provider;
     return el("provider").fire("change");
@@ -333,6 +341,8 @@ test("credential edits invalidate previous account models and block persistence 
   await el("save").fire("click");
   assert.equal(sync.provider, "googletranslate");
   assert.equal(local.apiKeyByProvider.openai, "openai-key");
+  assert.equal(fetches.length, 1, "no catalog request before the key is committed");
+  el("apiKey").fire("change");
   const fresh = await waitForFetch(fetches, (request) => request !== initial);
   assert.equal(fresh.options.headers.Authorization, "Bearer new-key");
   answer(fresh, ["gpt-new-account"]);
@@ -360,6 +370,8 @@ test("endpoint edits do not reuse an old catalog when the new endpoint fails", a
   el("apiUrl").fire("input");
   assert.equal(el("save").disabled, true);
   assert.deepEqual(el("model").options, []);
+  assert.equal(fetches.length, 1, "no catalog request before the endpoint is committed");
+  el("apiUrl").fire("change");
   const fresh = await waitForFetch(fetches, (request) => request !== initial);
   assert.equal(fresh.url, "https://other.example/v1/models");
   fresh.reject(new Error("Offline"));
@@ -450,4 +462,159 @@ test("failed silent OpenRouter refresh preserves save status but manual refresh 
   assert.equal(el("status").textContent, "Network unavailable");
   assert.notEqual(el("status").style.color, savedColor);
   assert.equal(el("model").value, "openrouter/free");
+});
+
+test("missing API key offers presets without an unverified-catalog warning", async () => {
+  const { el, local, fetches, select } = await makeOptions();
+  delete local.apiKeyByProvider.openai;
+  await select("openai");
+  await tick();
+  assert.equal(fetches.length, 0, "no catalog request without credentials");
+  assert.deepEqual(el("model").options.map((option) => option.value), ["gpt-6-luna", "gpt-6.2-sol"]);
+  assert.equal(el("model").value, "gpt-6-luna");
+  assert.equal(el("modelCatalogNotice").style.display, "none");
+  assert.equal(el("save").disabled, false);
+});
+
+test("catalog notice is localized on the first render", async () => {
+  const { el } = await makeOptions({
+    sync: { provider: "openai", apiUrl: "https://api.openai.com/v1", model: "gpt-6-luna", uiLang: "ru" },
+    expectReady: false
+  });
+  assert.match(el("modelCatalogNotice").textContent, /^Обновление списка/);
+});
+
+test("background catalog refresh keeps saving available", async () => {
+  const { el, sync, fetches, select, answer } = await makeOptions();
+  await select("openai");
+  const initial = await waitForFetch(fetches, () => true);
+  answer(initial, ["gpt-6-luna"]);
+  await tick();
+  await el("save").fire("click");
+  assert.equal(sync.provider, "openai");
+  const silent = await waitForFetch(fetches, (request) => request !== initial);
+  assert.equal(el("save").disabled, false, "a background refresh does not block saving");
+  answer(silent, ["gpt-6-luna"]);
+  await tick();
+  assert.equal(el("save").disabled, false);
+});
+
+test("Enter commits a credential edit and refreshes the catalog", async () => {
+  const { el, fetches, select, answer } = await makeOptions();
+  await select("openai");
+  const initial = await waitForFetch(fetches, () => true);
+  answer(initial, ["gpt-6-luna"]);
+  await tick();
+  el("apiKey").value = "new-key";
+  el("apiKey").fire("input");
+  assert.equal(fetches.length, 1, "typing alone does not request the catalog");
+  el("apiKey").fire("keydown", { key: "Enter" });
+  const fresh = await waitForFetch(fetches, (request) => request !== initial);
+  assert.equal(fresh.options.headers.Authorization, "Bearer new-key");
+  answer(fresh, ["gpt-6-luna"]);
+  await tick();
+  assert.equal(el("save").disabled, false);
+});
+
+test("a refresh requested while the form is busy runs when it frees up", async () => {
+  const { el, context, fetches, select, answer } = await makeOptions();
+  await select("openai");
+  const initial = await waitForFetch(fetches, () => true);
+  answer(initial, ["gpt-6-luna"]);
+  await tick();
+  // No timer fallback: the deferred refresh has to be picked up by the form.
+  vm.runInContext("setTimeout = () => null", context);
+  vm.runInContext("settingsBusy = true", context);
+  const refresh = vm.runInContext("refreshProviderModels", context);
+  await refresh({ force: true });
+  assert.equal(fetches.length, 1, "no request is made while the form is busy");
+  vm.runInContext("settingsBusy = false", context);
+  vm.runInContext("updateSettingsControls()", context);
+  const retried = await waitForFetch(fetches, (request) => request !== initial);
+  answer(retried, ["gpt-6-luna"]);
+  await tick();
+  assert.equal(el("save").disabled, false);
+});
+
+test("reverting a credential edit before blur restores the verified catalog", async () => {
+  const { el, fetches, select, answer } = await makeOptions();
+  await select("openai");
+  const initial = await waitForFetch(fetches, () => true);
+  answer(initial, ["gpt-6-luna"]);
+  await tick();
+  el("apiKey").value = "openai-key2";
+  el("apiKey").fire("input");
+  assert.deepEqual(el("model").options, []);
+  assert.equal(el("save").disabled, true);
+  el("apiKey").value = "openai-key";
+  el("apiKey").fire("input");
+  el("apiKey").fire("blur");
+  await waitForCatalog(el);
+  assert.deepEqual(el("model").options.map((option) => option.value), ["gpt-6-luna"]);
+  assert.equal(el("model").value, "gpt-6-luna");
+  assert.equal(fetches.length, 1, "the scoped cache restores the list without a request");
+});
+
+test("a failed save during a catalog refresh leaves the model dropdown usable", async () => {
+  const { el, context, fetches, select, answer } = await makeOptions();
+  await select("openai");
+  const initial = await waitForFetch(fetches, () => true);
+  answer(initial, ["gpt-6-luna"]);
+  await tick();
+  const refresh = vm.runInContext("refreshProviderModels", context);
+  const pendingRefresh = refresh({ force: true });
+  const refreshing = await waitForFetch(fetches, (request) => request !== initial);
+  vm.runInContext('chrome.storage.sync.set = () => Promise.reject(new Error("Quota exceeded"))', context);
+  await el("save").fire("click");
+  assert.match(el("status").textContent, /Quota exceeded/);
+  answer(refreshing, ["gpt-6-luna"]);
+  await pendingRefresh;
+  await tick();
+  assert.equal(el("save").disabled, false);
+  assert.equal(el("model").disabled, false, "the canceled refresh must not strand the dropdown");
+  assert.deepEqual(el("model").options.map((option) => option.value), ["gpt-6-luna"]);
+});
+
+test("Enter and the following blur do not commit the catalog twice", async () => {
+  const { el, context, fetches, select, answer } = await makeOptions();
+  await select("openai");
+  const initial = await waitForFetch(fetches, () => true);
+  answer(initial, ["gpt-6-luna"]);
+  await tick();
+  el("apiKey").value = "new-key";
+  el("apiKey").fire("input");
+  el("apiKey").fire("keydown", { key: "Enter" });
+  const fresh = await waitForFetch(fetches, (request) => request !== initial);
+  answer(fresh, ["gpt-6-luna"]);
+  await tick();
+  const generation = vm.runInContext("modelRequestGeneration", context);
+  el("apiKey").fire("change");
+  el("apiKey").fire("blur");
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(vm.runInContext("modelRequestGeneration", context), generation,
+    "the already committed value must not be invalidated again");
+  assert.equal(vm.runInContext("catalogPending", context), false);
+  assert.deepEqual(el("model").options.map((option) => option.value), ["gpt-6-luna"]);
+  assert.equal(fetches.length, 2, "the committed value is not requested again");
+});
+
+test("a deferred refresh does not survive a provider switch", async () => {
+  const { el, context, fetches, select, answer } = await makeOptions();
+  await select("openai");
+  const initial = await waitForFetch(fetches, () => true);
+  answer(initial, ["gpt-6-luna"]);
+  await tick();
+  // Queue a refresh while the form is busy, then switch providers before it runs.
+  vm.runInContext("setTimeout = () => null", context);
+  vm.runInContext("settingsBusy = true", context);
+  await vm.runInContext("refreshProviderModels", context)({ force: true });
+  vm.runInContext("settingsBusy = false", context);
+  const switched = select("claude");
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const claudeRequests = fetches.filter((request) => request.url.includes("anthropic"));
+  assert.equal(claudeRequests.length, 1, "the new provider catalog is requested once");
+  answer(claudeRequests[0], ["claude-haiku-5-5"]);
+  await switched;
+  await tick();
+  assert.deepEqual(el("model").options.map((option) => option.value), ["claude-haiku-5-5"]);
 });

@@ -764,6 +764,8 @@ function applyProviderDefaults(provider, currentModel) {
   cancelScheduledCatalogRefresh();
   catalogPending = false;
   pendingCatalogSelection = null;
+  deferredCatalogRefresh = null;
+  catalogFieldsDirty = false;
   modelCatalogNotice = null;
   const preset = PROVIDERS[provider] || PROVIDERS.custom;
   if (provider === "custom") {
@@ -1293,6 +1295,8 @@ let keyLoadPending = false;
 let catalogPending = false;
 let pendingCatalogSelection = null;
 let catalogRefreshTimer = null;
+let deferredCatalogRefresh = null;
+let catalogFieldsDirty = false;
 
 function hasModelCatalog(provider) {
   return Boolean(PROVIDERS[provider] && !isDirectProvider(provider) && provider !== "custom");
@@ -1325,10 +1329,27 @@ function scheduleCatalogRefresh() {
   }, 350);
 }
 
-function applyCatalogModels(models, selected, provider) {
+// Credential edits are transactional: the list is invalidated on the first
+// keystroke, but the provider is only queried once a field is committed. The
+// dirty flag makes committing idempotent (Enter followed by blur must not
+// request the catalog twice) and guarantees a commit even when the native
+// `change` event is skipped because the value was reverted before blur.
+function markCatalogDirty() {
+  if (!hasModelCatalog(providerSelect.value) || catalogFieldsDirty) return;
+  catalogFieldsDirty = true;
+  invalidateModelCatalog();
+}
+
+function commitCatalogFields() {
+  if (!catalogFieldsDirty) return;
+  catalogFieldsDirty = false;
+  scheduleCatalogRefresh();
+}
+
+function applyCatalogModels(models, selected, provider, { requested = true } = {}) {
   const available = models.length ? models : PROVIDERS[provider].models;
   modelCatalogNotice = {
-    fallback: !models.length,
+    fallback: requested && !models.length,
     unavailable: available.includes(selected) ? "" : selected || modelCatalogNotice?.unavailable || ""
   };
   populateModels(available, selected, provider, { requireSelection: true });
@@ -1336,8 +1357,19 @@ function applyCatalogModels(models, selected, provider) {
   renderModelCatalogNotice();
 }
 
+function isCatalogInvalidated() {
+  return catalogPending && pendingCatalogSelection !== null;
+}
+
+function settleDeferredCatalogRefresh() {
+  if (!deferredCatalogRefresh || settingsBusy || keyLoadPending) return;
+  const options = deferredCatalogRefresh;
+  deferredCatalogRefresh = null;
+  refreshProviderModels(options);
+}
+
 function updateSettingsControls() {
-  saveButton.disabled = settingsBusy || keyLoadPending || catalogPending;
+  saveButton.disabled = settingsBusy || keyLoadPending || isCatalogInvalidated();
   providerSelect.disabled = settingsBusy;
   syncApiKeysCheckbox.disabled = settingsBusy || keyLoadPending;
   apiKeyInput.disabled = settingsBusy || keyLoadPending;
@@ -1349,6 +1381,9 @@ function updateSettingsControls() {
   openrouterFreeOnlyCheckbox.disabled = settingsBusy || keyLoadPending;
   openrouterSourceSelect.disabled = settingsBusy || keyLoadPending;
   yandexFolderInput.disabled = settingsBusy || keyLoadPending;
+  // Busy states always end by re-enabling the form, so this is the one place
+  // where a refresh postponed by that state can safely run.
+  settleDeferredCatalogRefresh();
 }
 
 function isCurrentProvider(provider, generation) {
@@ -1357,7 +1392,17 @@ function isCurrentProvider(provider, generation) {
 
 async function refreshProviderModels({ force = false, showStatus = false } = {}) {
   const provider = providerSelect.value;
-  if (!hasModelCatalog(provider) || settingsBusy || keyLoadPending) return;
+  if (!hasModelCatalog(provider)) {
+    deferredCatalogRefresh = null;
+    return;
+  }
+  if (settingsBusy || keyLoadPending) {
+    // The form is mid-save or mid-key-read; run once it is free again instead
+    // of leaving the catalog invalidated or stuck in its loading state.
+    deferredCatalogRefresh = { force, showStatus };
+    return;
+  }
+  deferredCatalogRefresh = null;
   cancelScheduledCatalogRefresh();
   const generation = providerGeneration;
   const request = ++modelRequestGeneration;
@@ -1385,7 +1430,7 @@ async function refreshProviderModels({ force = false, showStatus = false } = {})
     if (!isCurrent()) return;
     // An empty filtered catalog is not evidence that a previously selected ID
     // is safe. Offer only known presets, explicitly marked as unverified.
-    applyCatalogModels(models, selected, provider);
+    applyCatalogModels(models, selected, provider, { requested: Boolean(key) });
     if (models.length) {
       if (showStatus) setStatus(getLocaleStrings(uiLangSelect.value).status_models_updated, false);
     } else if (showStatus) {
@@ -1426,6 +1471,7 @@ async function initializeOptions() {
   const uiLang = data.uiLang || defaultConfig.uiLang;
   buildUiLanguageOptions(uiLangSelect);
   uiLangSelect.value = uiLang;
+  renderModelCatalogNotice();
   setProviderControls(provider);
   buildLanguageOptions(targetLangSelect, uiLang);
   buildLanguageOptions(sourceLangSelect, uiLang);
@@ -1525,18 +1571,32 @@ providerSelect.addEventListener("change", async () => {
   }
 });
 
+// Invalidate immediately so a stale catalog can never be saved, but request
+// the new catalog only when a field is committed (blur/Enter) instead of on
+// every keystroke, which would query providers with partial credentials.
 apiUrlInput.addEventListener("input", () => {
   if (providerSelect.value === "custom") savedCustomApiUrl = apiUrlInput.value.trim();
-  else scheduleCatalogRefresh();
+  else markCatalogDirty();
 });
-apiKeyInput.addEventListener("input", scheduleCatalogRefresh);
+apiKeyInput.addEventListener("input", markCatalogDirty);
 modelSelect.addEventListener("change", () => {
   if (modelCatalogNotice && modelSelect.value) {
     modelCatalogNotice.unavailable = "";
     renderModelCatalogNotice();
   }
 });
-yandexFolderInput.addEventListener("input", scheduleCatalogRefresh);
+yandexFolderInput.addEventListener("input", markCatalogDirty);
+// Text inputs only emit `change` when they lose focus and only if the value
+// changed, so Enter and blur commit the dirty state explicitly.
+for (const input of [apiKeyInput, apiUrlInput, yandexFolderInput]) {
+  input.addEventListener("change", commitCatalogFields);
+  input.addEventListener("blur", commitCatalogFields);
+  input.addEventListener("keydown", (event) => {
+    if (event?.key !== "Enter") return;
+    event.preventDefault?.();
+    commitCatalogFields();
+  });
+}
 modelCustomInput.addEventListener("input", () => {
   if (providerSelect.value === "custom") savedCustomModel = modelCustomInput.value.trim();
 });
@@ -1591,7 +1651,7 @@ refreshYandexBtn.addEventListener("click", () => {
 });
 
 saveButton.addEventListener("click", async () => {
-  if (settingsBusy || keyLoadPending || catalogPending) return;
+  if (settingsBusy || keyLoadPending || isCatalogInvalidated()) return;
   const provider = providerSelect.value;
   const isCustom = provider === "custom";
   const modelValue = isCustom ? modelCustomInput.value.trim() : modelSelect.value;
@@ -1631,6 +1691,10 @@ saveButton.addEventListener("click", async () => {
   }
   settingsBusy = true;
   ++modelRequestGeneration;
+  // The generation bump cancels any in-flight catalog refresh, whose cleanup
+  // can no longer run. Settle its pending state here so a failed save cannot
+  // leave the model dropdown disabled; a successful save re-refreshes below.
+  catalogPending = false;
   updateSettingsControls();
   let saved = false;
   try {
