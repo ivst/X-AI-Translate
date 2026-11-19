@@ -15,9 +15,33 @@
     return normalizeLanguage(code);
   }
 
+  // CLD can be unreliable on short strings such as kana-only Japanese.
+  // Kana and Hangul provide distinctive evidence, unlike Latin, Cyrillic
+  // or Han-only text. Ignore punctuation/digits and require dominance.
+  function detectDistinctiveScript(sample) {
+    let letters = 0;
+    let kana = 0;
+    let han = 0;
+    let hangul = 0;
+    for (const ch of sample) {
+      if (!/\p{L}/u.test(ch)) continue;
+      letters++;
+      if (/[\p{Script=Hiragana}\p{Script=Katakana}]/u.test(ch)) kana++;
+      else if (/\p{Script=Han}/u.test(ch)) han++;
+      else if (/\p{Script=Hangul}/u.test(ch)) hangul++;
+    }
+    if (!letters) return null;
+    if (kana > 0 && (kana + han) / letters >= 0.8) return "ja";
+    if (hangul / letters >= 0.8) return "ko";
+    return null;
+  }
+
   async function detectReliableLanguage(text) {
-    if (!globalThis.chrome?.i18n?.detectLanguage || !String(text).trim()) return null;
-    const sample = String(text).slice(0, 4096);
+    if (!String(text).trim()) return null;
+    // Normalize for detection only (e.g. half-width ｶﾀｶﾅ). The translation
+    // receives the original text, so formatting and compatibility forms stay intact.
+    const sample = String(text).normalize("NFKC").slice(0, 4096);
+    if (!globalThis.chrome?.i18n?.detectLanguage) return detectDistinctiveScript(sample);
     const cached = detectionCache.get(sample);
     if (cached) {
       detectionCache.delete(sample);
@@ -38,23 +62,24 @@
   }
 
   async function detectLanguageSample(sample) {
+    const fallback = () => detectDistinctiveScript(sample);
     let timeout;
     try {
       const result = await Promise.race([
         chrome.i18n.detectLanguage(sample),
         new Promise((resolve) => { timeout = setTimeout(() => resolve(null), 1500); })
       ]);
-      if (!result || !Array.isArray(result.languages)) return { language: null, cacheable: false };
-      if (!result.isReliable) return { language: null, cacheable: true };
+      if (!result || !Array.isArray(result.languages)) return { language: fallback(), cacheable: false };
+      if (!result.isReliable) return { language: fallback(), cacheable: true };
       const best = [...result.languages].sort((a, b) => b.percentage - a.percentage)[0];
       const language = normalizeTranslatorLanguage(best?.language);
       return {
         language: best?.percentage >= 80 && /^(?:[a-z]{2,3}|zh-Hant)$/.test(language) && language !== "und"
-          ? language : null,
+          ? language : fallback(),
         cacheable: true
       };
     } catch (_) {
-      return { language: null, cacheable: false };
+      return { language: fallback(), cacheable: false };
     } finally {
       clearTimeout(timeout);
     }

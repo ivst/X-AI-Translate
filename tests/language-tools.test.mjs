@@ -69,6 +69,33 @@ test("Chrome local provider uses the detected pair and releases its translator",
   assert.equal(destroyed, 1);
 });
 
+test("short Japanese kana including half-width Katakana uses a safe script fallback", async () => {
+  const raw = "ドレミファソラシド。ｼｮｳ";
+  let pair, sample, translatedInput;
+  const t = tools({
+    detect: async text => {
+      sample = text;
+      return { isReliable: false, languages: [{ language: "und", percentage: 100 }] };
+    },
+    translator: {
+      async availability(options) { pair = options; return "available"; },
+      async create() { return { translate: async text => { translatedInput = text; return "Do re mi"; }, destroy() {} }; }
+    }
+  });
+  assert.equal(await t.translateLocally(raw, "auto", "ru"), "Do re mi");
+  assert.equal(pair.sourceLanguage, "ja");
+  assert.equal(pair.targetLanguage, "ru");
+  assert.equal(sample, "ドレミファソラシド。ショウ", "normalize half-width kana for detection only");
+  assert.equal(translatedInput, raw, "the original text is sent to Translator");
+  assert.equal(await t.detectReliableLanguage("ｼｮｳ"), "ja");
+  assert.equal(await t.detectReliableLanguage("日本語です"), "ja");
+  assert.equal(await t.detectReliableLanguage("안녕"), "ko");
+  assert.equal(await t.detectReliableLanguage("日本語"), null, "Han-only text is ambiguous");
+  assert.equal(await t.detectReliableLanguage("hello"), null, "Latin-only text is ambiguous");
+  assert.equal(await t.detectReliableLanguage("Привет"), null, "Cyrillic-only text is ambiguous");
+  assert.equal(await t.detectReliableLanguage("あ hello"), null, "one kana in mostly foreign text is insufficient");
+});
+
 test("Chrome local provider reports unavailable API, pair, and activation without fallback", async () => {
   await assert.rejects(tools().translateLocally("text", "en", "ru"), /unavailable/);
   const unavailable = tools({ translator: { availability: async () => "unavailable", create() { assert.fail(); } } });

@@ -107,6 +107,26 @@ test("popup local provider reports unavailable API without cloud fallback and re
   assert.equal(messages.length, 0);
 });
 
+test("popup local auto-detection translates the reported short Japanese string", async () => {
+  let pair, passedText;
+  const { el, messages, click } = makePopup({
+    translator: {
+      async availability(options) { pair = options; return "available"; },
+      async create() { return { translate: async text => { passedText = text; return "До ре ми"; }, destroy() {} }; }
+    }
+  });
+  const raw = "ドレミファソラシド。ｼｮｳ";
+  el("quickInput").value = raw;
+  el("quickFrom").value = "auto";
+  el("quickTo").value = "ru";
+  await click();
+  assert.equal(pair.sourceLanguage, "ja");
+  assert.equal(pair.targetLanguage, "ru");
+  assert.equal(passedText, raw);
+  assert.equal(el("quickOutput").value, "До ре ми");
+  assert.equal(messages.length, 0);
+});
+
 test("popup cloud providers still send the correct language pair and incognito flag", async () => {
   const { el, messages, click } = makePopup({ provider: "openai", incognito: true });
   await click();
