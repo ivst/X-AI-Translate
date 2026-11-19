@@ -6,6 +6,7 @@ const DEFAULT_CONFIG = {
   apiKey: "",
   apiKeyByProvider: {},
   model: "gpt-6-luna",
+  modelMigrationVersion: 0,
   targetLang: "en",
   sourceLang: "auto",
   syncApiKeys: false,
@@ -535,8 +536,9 @@ async function migrateLegacyModelConfig(config) {
   if (migrated === config) return config;
   try {
     // Do not overwrite a different provider/model selected while the read was pending.
-    const current = await chrome.storage.sync.get({ provider: "", model: "" });
-    if (current.provider === config.provider && current.model === config.model) {
+    const current = await chrome.storage.sync.get({ provider: "", model: "", apiUrl: "", modelMigrationVersion: 0 });
+    if (current.provider === config.provider && current.model === config.model && current.apiUrl === config.apiUrl
+      && current.modelMigrationVersion < MODEL_MIGRATION_VERSION) {
       await chrome.storage.sync.set(modelMigrationPatch(config, migrated));
     }
   } catch (_) {
@@ -546,7 +548,7 @@ async function migrateLegacyModelConfig(config) {
 }
 
 function resolveModelForProvider(config) {
-  const model = migratedModelId(config.provider, (config.model || "").trim());
+  const model = (config.model || "").trim();
   if (!model) return model;
   if (config.provider !== "yandexgpt") {
     return model;
@@ -646,7 +648,7 @@ function buildTranslateRequestBody(config, text, targetLang, sourceLang, stream)
     stream: Boolean(stream)
   };
   if (config.provider === "deepseek") {
-    const thinkingEnabled = migrateModelConfig(config).deepseekThinkingEnabled === true;
+    const thinkingEnabled = config.deepseekThinkingEnabled === true;
     body.thinking = {
       type: thinkingEnabled ? "enabled" : "disabled"
     };

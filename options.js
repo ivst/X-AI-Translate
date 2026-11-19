@@ -4,6 +4,7 @@
   apiKey: "",
   apiKeyByProvider: {},
   model: "gpt-6-luna",
+  modelMigrationVersion: 0,
   modelByProvider: {},
   targetLang: "en",
   sourceLang: "auto",
@@ -28,8 +29,9 @@ async function migrateLegacyModelConfig(config) {
   const migrated = migrateModelConfig(config);
   if (migrated === config) return config;
   try {
-    const current = await chrome.storage.sync.get({ provider: "", model: "" });
-    if (current.provider === config.provider && current.model === config.model) {
+    const current = await chrome.storage.sync.get({ provider: "", model: "", apiUrl: "", modelMigrationVersion: 0 });
+    if (current.provider === config.provider && current.model === config.model && current.apiUrl === config.apiUrl
+      && current.modelMigrationVersion < MODEL_MIGRATION_VERSION) {
       await chrome.storage.sync.set(modelMigrationPatch(config, migrated));
     }
   } catch (_) {
@@ -161,6 +163,7 @@ const GEMINI_CACHE_KEY = "gemini_models_cache_v2";
 const GEMINI_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const YANDEX_CACHE_KEY = "yandex_models_cache";
 const YANDEX_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const MODEL_CATALOG_VERSION = 3;
 
 function fetchModelCatalog(url, options) {
   return fetch(url, { ...options, signal: AbortSignal.timeout(15000) });
@@ -682,6 +685,7 @@ let modelCatalogNotice = null;
 function renderModelCatalogNotice() {
   const strings = getLocaleStrings(uiLangSelect.value);
   const messages = [];
+  if (modelCatalogNotice?.loading) messages.push(strings.status_refreshing);
   if (modelCatalogNotice?.fallback) messages.push(strings.model_catalog_fallback);
   if (modelCatalogNotice?.unavailable) {
     messages.push(strings.model_catalog_unavailable.replace("{model}", () => modelCatalogNotice.unavailable));
@@ -690,13 +694,7 @@ function renderModelCatalogNotice() {
   modelCatalogNoticeEl.style.display = messages.length ? "block" : "none";
 }
 
-function populateModels(models, selected, provider = providerSelect.value, { preserveUnlisted = false, requireSelection = false } = {}) {
-  // Preserve saved IDs when displaying presets, but never reinsert an ID
-  // excluded by a successfully loaded, filtered catalog.
-  if (preserveUnlisted && selected && !models.includes(selected) && provider !== "custom" && !isDirectProvider(provider)
-    && !(provider === "openrouter" && openrouterFreeOnlyCheckbox.checked)) {
-    models = [...models, selected];
-  }
+function populateModels(models, selected, provider = providerSelect.value, { requireSelection = false } = {}) {
   modelSelect.innerHTML = "";
   const hasModels = models.length > 0;
   if (hasModels) {
@@ -763,17 +761,26 @@ function setProviderControls(provider) {
 }
 
 function applyProviderDefaults(provider, currentModel) {
+  cancelScheduledCatalogRefresh();
+  catalogPending = false;
+  pendingCatalogSelection = null;
   modelCatalogNotice = null;
-  renderModelCatalogNotice();
   const preset = PROVIDERS[provider] || PROVIDERS.custom;
   if (provider === "custom") {
     apiUrlInput.value = savedCustomApiUrl || "";
     populateModels([], savedCustomModel || "");
     setProviderControls(provider);
+    renderModelCatalogNotice();
     return;
   }
   apiUrlInput.value = preset.apiUrl || "";
-  populateModels(preset.models, currentModel, provider, { preserveUnlisted: true });
+  if (hasModelCatalog(provider)) {
+    // Keep the intended model separate from the unverified dropdown.
+    invalidateModelCatalog(currentModel || preset.models[0]);
+  } else {
+    populateModels(preset.models, currentModel, provider);
+    renderModelCatalogNotice();
+  }
   setProviderControls(provider);
 }
 
@@ -847,7 +854,7 @@ async function fetchOpenAIModels(apiUrl, apiKey) {
 
 function filterOpenAIModels(models) {
   const ids = models.map((m) => m.id).filter(Boolean);
-  return [...new Set(ids.filter(isLikelyOpenAIChatModel).map((id) => migratedModelId("openai", id)))].sort();
+  return [...new Set(ids.filter(isLikelyOpenAIChatModel))].sort();
 }
 
 function loadOpenAICache() {
@@ -870,6 +877,7 @@ async function getOpenAIModels(apiUrl, apiKey, forceRefresh = false, isCurrent =
     cache &&
     cache.apiUrl === normalizedUrl &&
     cache.keyFingerprint === keyFingerprint &&
+    cache.catalogVersion === MODEL_CATALOG_VERSION &&
     Array.isArray(cache.models) &&
     Date.now() - cache.ts < OPENAI_CACHE_TTL_MS
   ) {
@@ -880,6 +888,7 @@ async function getOpenAIModels(apiUrl, apiKey, forceRefresh = false, isCurrent =
   if (isCurrent()) chrome.storage.local.set({
     [OPENAI_CACHE_KEY]: {
       ts: Date.now(),
+      catalogVersion: MODEL_CATALOG_VERSION,
       apiUrl: normalizedUrl,
       keyFingerprint,
       models: ids
@@ -906,8 +915,7 @@ async function fetchDeepSeekModels(apiUrl, apiKey) {
 function filterDeepSeekModels(models) {
   return [...new Set(models
     .map((m) => m.id)
-    .filter((id) => /^deepseek-/i.test(String(id)))
-    .map((id) => migratedModelId("deepseek", id)))]
+    .filter((id) => /^deepseek-/i.test(String(id)) && !/vision|image|audio|embedding/i.test(id)))]
     .sort();
 }
 
@@ -931,16 +939,18 @@ async function getDeepSeekModels(apiUrl, apiKey, forceRefresh = false, isCurrent
     cache &&
     cache.apiUrl === normalizedUrl &&
     cache.keyFingerprint === keyFingerprint &&
+    cache.catalogVersion === MODEL_CATALOG_VERSION &&
     Array.isArray(cache.models) &&
     Date.now() - cache.ts < DEEPSEEK_CACHE_TTL_MS
   ) {
-    return filterDeepSeekModels(cache.models.map((id) => ({ id })));
+    return cache.models;
   }
   const models = await fetchDeepSeekModels(normalizedUrl, apiKey);
   const ids = filterDeepSeekModels(models);
   if (isCurrent()) chrome.storage.local.set({
     [DEEPSEEK_CACHE_KEY]: {
       ts: Date.now(),
+      catalogVersion: MODEL_CATALOG_VERSION,
       apiUrl: normalizedUrl,
       keyFingerprint,
       models: ids
@@ -970,8 +980,7 @@ function filterClaudeModels(models) {
   return [...new Set(models
     .map((m) => m.id)
     .filter(Boolean)
-    .filter((id) => /^claude-/i.test(String(id)))
-    .map((id) => migratedModelId("claude", id)))].sort();
+    .filter((id) => /^claude-/i.test(String(id))))].sort();
 }
 
 function loadClaudeCache() {
@@ -994,6 +1003,7 @@ async function getClaudeModels(apiUrl, apiKey, forceRefresh = false, isCurrent =
     cache &&
     cache.apiUrl === normalizedUrl &&
     cache.keyFingerprint === keyFingerprint &&
+    cache.catalogVersion === MODEL_CATALOG_VERSION &&
     Array.isArray(cache.models) &&
     Date.now() - cache.ts < CLAUDE_CACHE_TTL_MS
   ) {
@@ -1004,6 +1014,7 @@ async function getClaudeModels(apiUrl, apiKey, forceRefresh = false, isCurrent =
   if (isCurrent()) chrome.storage.local.set({
     [CLAUDE_CACHE_KEY]: {
       ts: Date.now(),
+      catalogVersion: MODEL_CATALOG_VERSION,
       apiUrl: normalizedUrl,
       keyFingerprint,
       models: ids
@@ -1025,25 +1036,29 @@ function getGeminiModelsEndpoint(apiUrl) {
       }
       return `${url.toString().replace(/\/$/, "")}/models`;
     }
+    return `${normalized}/models`;
   } catch (_) {
     // fall through
   }
-  return "https://generativelanguage.googleapis.com/v1beta/models";
+  throw new Error("Invalid Gemini API URL.");
 }
 
 async function fetchGeminiModels(apiUrl, apiKey) {
   const endpoint = getGeminiModelsEndpoint(apiUrl);
+  const headers = { "x-goog-api-key": apiKey };
+  if (new URL(endpoint).hostname !== "generativelanguage.googleapis.com") {
+    headers.Authorization = `Bearer ${apiKey}`;
+  }
   const response = await fetchModelCatalog(endpoint, {
-    headers: {
-      "x-goog-api-key": apiKey
-    }
+    headers
   });
   if (!response.ok) {
     const errorText = await response.text();
     throw new Error(`Gemini API error ${response.status}: ${errorText}`);
   }
   const json = await response.json();
-  return Array.isArray(json?.models) ? json.models : [];
+  return Array.isArray(json?.models) ? json.models : Array.isArray(json?.data)
+    ? json.data.map((model) => ({ ...model, name: `models/${model.id}` })) : [];
 }
 
 function filterGeminiModels(models) {
@@ -1055,8 +1070,7 @@ function filterGeminiModels(models) {
       return methods.length === 0 || methods.includes("generateContent");
     })
     .map((m) => String(m.name).replace(/^models\//, ""))
-    .filter(Boolean)
-    .map((id) => migratedModelId("gemini", id)))].sort();
+    .filter(Boolean))].sort();
 }
 
 function loadGeminiCache() {
@@ -1079,6 +1093,7 @@ async function getGeminiModels(apiUrl, apiKey, forceRefresh = false, isCurrent =
     cache &&
     cache.apiUrl === normalizedUrl &&
     cache.keyFingerprint === keyFingerprint &&
+    cache.catalogVersion === MODEL_CATALOG_VERSION &&
     Array.isArray(cache.models) &&
     Date.now() - cache.ts < GEMINI_CACHE_TTL_MS
   ) {
@@ -1089,6 +1104,7 @@ async function getGeminiModels(apiUrl, apiKey, forceRefresh = false, isCurrent =
   if (isCurrent()) chrome.storage.local.set({
     [GEMINI_CACHE_KEY]: {
       ts: Date.now(),
+      catalogVersion: MODEL_CATALOG_VERSION,
       apiUrl: normalizedUrl,
       keyFingerprint,
       models: ids
@@ -1147,6 +1163,7 @@ async function getYandexModels(apiUrl, apiKey, folderId, forceRefresh = false, i
     cache &&
     cache.apiUrl === normalizedUrl &&
     cache.keyFingerprint === keyFingerprint &&
+    cache.catalogVersion === MODEL_CATALOG_VERSION &&
     cache.folderId === cleanFolderId &&
     Array.isArray(cache.models) &&
     Date.now() - cache.ts < YANDEX_CACHE_TTL_MS
@@ -1158,6 +1175,7 @@ async function getYandexModels(apiUrl, apiKey, folderId, forceRefresh = false, i
   if (isCurrent()) chrome.storage.local.set({
     [YANDEX_CACHE_KEY]: {
       ts: Date.now(),
+      catalogVersion: MODEL_CATALOG_VERSION,
       apiUrl: normalizedUrl,
       keyFingerprint,
       folderId: cleanFolderId,
@@ -1186,10 +1204,10 @@ function isFreeModel(pricing) {
   ));
 }
 
-async function fetchOpenrouterModels(apiKey, source) {
+async function fetchOpenrouterModels(apiKey, source, apiUrl) {
   const endpoints = source === "user"
-    ? ["https://openrouter.ai/api/v1/models/user", "https://openrouter.ai/api/v1/models"]
-    : ["https://openrouter.ai/api/v1/models"];
+    ? [`${apiUrl}/models/user`, `${apiUrl}/models`]
+    : [`${apiUrl}/models`];
 
   let lastError = null;
   for (const endpoint of endpoints) {
@@ -1237,12 +1255,16 @@ function loadOpenrouterCache() {
   });
 }
 
-async function getOpenrouterModels(apiKey, freeOnly, source, forceRefresh = false, isCurrent = () => true) {
+async function getOpenrouterModels(apiKey, freeOnly, source, forceRefresh = false, isCurrent = () => true, apiUrl = PROVIDERS.openrouter.apiUrl) {
+  const normalizedUrl = normalizeProviderApiUrl("openrouter", apiUrl);
+  if (!normalizedUrl) throw new Error("API URL is required.");
   const keyFingerprint = await getApiKeyFingerprint(apiKey);
   const cache = await loadOpenrouterCache();
   if (
     !forceRefresh && cache &&
+    cache.apiUrl === normalizedUrl &&
     cache.keyFingerprint === keyFingerprint &&
+    cache.catalogVersion === MODEL_CATALOG_VERSION &&
     cache.freeOnly === freeOnly &&
     cache.source === source &&
     Array.isArray(cache.models) &&
@@ -1250,11 +1272,13 @@ async function getOpenrouterModels(apiKey, freeOnly, source, forceRefresh = fals
   ) {
     return cache.models;
   }
-  const models = await fetchOpenrouterModels(apiKey, source);
+  const models = await fetchOpenrouterModels(apiKey, source, normalizedUrl);
   const ids = filterOpenrouterModels(models, freeOnly);
   if (isCurrent()) chrome.storage.local.set({
     [OPENROUTER_CACHE_KEY]: {
       ts: Date.now(),
+      catalogVersion: MODEL_CATALOG_VERSION,
+      apiUrl: normalizedUrl,
       keyFingerprint,
       freeOnly,
       source,
@@ -1266,15 +1290,65 @@ async function getOpenrouterModels(apiKey, freeOnly, source, forceRefresh = fals
 
 
 let keyLoadPending = false;
+let catalogPending = false;
+let pendingCatalogSelection = null;
+let catalogRefreshTimer = null;
+
+function hasModelCatalog(provider) {
+  return Boolean(PROVIDERS[provider] && !isDirectProvider(provider) && provider !== "custom");
+}
+
+function cancelScheduledCatalogRefresh() {
+  if (catalogRefreshTimer !== null) clearTimeout(catalogRefreshTimer);
+  catalogRefreshTimer = null;
+}
+
+function invalidateModelCatalog(selected = pendingCatalogSelection ?? (modelSelect.value || modelCatalogNotice?.unavailable || "")) {
+  const provider = providerSelect.value;
+  if (!hasModelCatalog(provider)) return;
+  cancelScheduledCatalogRefresh();
+  ++modelRequestGeneration;
+  pendingCatalogSelection = selected;
+  catalogPending = true;
+  modelCatalogNotice = { loading: true };
+  populateModels([], "", provider);
+  renderModelCatalogNotice();
+  updateSettingsControls();
+}
+
+function scheduleCatalogRefresh() {
+  if (!hasModelCatalog(providerSelect.value)) return;
+  invalidateModelCatalog();
+  catalogRefreshTimer = setTimeout(() => {
+    catalogRefreshTimer = null;
+    refreshProviderModels();
+  }, 350);
+}
+
+function applyCatalogModels(models, selected, provider) {
+  const available = models.length ? models : PROVIDERS[provider].models;
+  modelCatalogNotice = {
+    fallback: !models.length,
+    unavailable: available.includes(selected) ? "" : selected || modelCatalogNotice?.unavailable || ""
+  };
+  populateModels(available, selected, provider, { requireSelection: true });
+  pendingCatalogSelection = null;
+  renderModelCatalogNotice();
+}
 
 function updateSettingsControls() {
-  saveButton.disabled = settingsBusy || keyLoadPending;
+  saveButton.disabled = settingsBusy || keyLoadPending || catalogPending;
   providerSelect.disabled = settingsBusy;
   syncApiKeysCheckbox.disabled = settingsBusy || keyLoadPending;
   apiKeyInput.disabled = settingsBusy || keyLoadPending;
   apiUrlInput.disabled = settingsBusy || keyLoadPending;
   refreshOpenrouterBtn.disabled = settingsBusy || keyLoadPending;
   refreshYandexBtn.disabled = settingsBusy || keyLoadPending;
+  modelSelect.disabled = settingsBusy || keyLoadPending || catalogPending || !modelSelect.options.length;
+  modelCustomInput.disabled = settingsBusy || keyLoadPending;
+  openrouterFreeOnlyCheckbox.disabled = settingsBusy || keyLoadPending;
+  openrouterSourceSelect.disabled = settingsBusy || keyLoadPending;
+  yandexFolderInput.disabled = settingsBusy || keyLoadPending;
 }
 
 function isCurrentProvider(provider, generation) {
@@ -1283,38 +1357,35 @@ function isCurrentProvider(provider, generation) {
 
 async function refreshProviderModels({ force = false, showStatus = false } = {}) {
   const provider = providerSelect.value;
+  if (!hasModelCatalog(provider) || settingsBusy || keyLoadPending) return;
+  cancelScheduledCatalogRefresh();
   const generation = providerGeneration;
   const request = ++modelRequestGeneration;
   const key = apiKeyInput.value.trim();
-  if (!key || settingsBusy || keyLoadPending) return;
-  const apiUrl = apiUrlInput.value;
+  const apiUrl = normalizeProviderApiUrl(provider, apiUrlInput.value);
   const folderId = yandexFolderInput.value;
   const freeOnly = openrouterFreeOnlyCheckbox.checked;
   const source = openrouterSourceSelect.value;
   const isCurrent = () => isCurrentProvider(provider, generation) && request === modelRequestGeneration;
-  const selected = modelSelect.value;
+  const selected = pendingCatalogSelection ?? (modelSelect.value || modelCatalogNotice?.unavailable || "");
+  const invalidated = pendingCatalogSelection !== null;
   const loaders = {
     openai: () => getOpenAIModels(apiUrl, key, force, isCurrent),
     deepseek: () => getDeepSeekModels(apiUrl, key, force, isCurrent),
     claude: () => getClaudeModels(apiUrl, key, force, isCurrent),
     gemini: () => getGeminiModels(apiUrl, key, force, isCurrent),
     yandexgpt: () => getYandexModels(apiUrl, key, folderId, force, isCurrent),
-    openrouter: () => getOpenrouterModels(key, freeOnly, source, force, isCurrent)
+    openrouter: () => getOpenrouterModels(key, freeOnly, source, force, isCurrent, apiUrl)
   };
-  if (!loaders[provider]) return;
+  catalogPending = true;
+  updateSettingsControls();
   if (showStatus) setStatus(getLocaleStrings(uiLangSelect.value).status_refreshing, false);
   try {
-    const models = await loaders[provider]();
+    const models = key ? await loaders[provider]() : [];
     if (!isCurrent()) return;
     // An empty filtered catalog is not evidence that a previously selected ID
     // is safe. Offer only known presets, explicitly marked as unverified.
-    const available = models.length ? models : PROVIDERS[provider].models;
-    modelCatalogNotice = {
-      fallback: !models.length,
-      unavailable: available.includes(selected) ? "" : selected || modelCatalogNotice?.unavailable || ""
-    };
-    populateModels(available, selected, provider, { requireSelection: true });
-    renderModelCatalogNotice();
+    applyCatalogModels(models, selected, provider);
     if (models.length) {
       if (showStatus) setStatus(getLocaleStrings(uiLangSelect.value).status_models_updated, false);
     } else if (showStatus) {
@@ -1322,8 +1393,15 @@ async function refreshProviderModels({ force = false, showStatus = false } = {})
     }
   } catch (err) {
     if (!isCurrent()) return;
-    // Preserve the selected model and the existing list after a temporary API failure.
+    // Never restore another account's IDs after a failed context change.
+    if (invalidated) applyCatalogModels([], selected, provider);
+    // A same-context refresh failure can retain its existing verified list.
     if (showStatus) setStatus(err.message || String(err), true);
+  } finally {
+    if (isCurrent()) {
+      catalogPending = false;
+      updateSettingsControls();
+    }
   }
 }
 
@@ -1422,7 +1500,7 @@ providerSelect.addEventListener("change", async () => {
   keyLoadPending = true;
   apiKeyInput.value = "";
   updateSettingsControls();
-  const selected = migratedModelId(provider, savedModelsByProvider[provider]);
+  const selected = savedModelsByProvider[provider];
   applyProviderDefaults(provider, selected);
   setOpenrouterControlsVisible(provider === "openrouter");
   setYandexControlsVisible(provider === "yandexgpt");
@@ -1448,18 +1526,17 @@ providerSelect.addEventListener("change", async () => {
 });
 
 apiUrlInput.addEventListener("input", () => {
-  ++modelRequestGeneration;
   if (providerSelect.value === "custom") savedCustomApiUrl = apiUrlInput.value.trim();
+  else scheduleCatalogRefresh();
 });
-apiKeyInput.addEventListener("input", () => { ++modelRequestGeneration; });
+apiKeyInput.addEventListener("input", scheduleCatalogRefresh);
 modelSelect.addEventListener("change", () => {
-  ++modelRequestGeneration;
   if (modelCatalogNotice && modelSelect.value) {
     modelCatalogNotice.unavailable = "";
     renderModelCatalogNotice();
   }
 });
-yandexFolderInput.addEventListener("input", () => { ++modelRequestGeneration; });
+yandexFolderInput.addEventListener("input", scheduleCatalogRefresh);
 modelCustomInput.addEventListener("input", () => {
   if (providerSelect.value === "custom") savedCustomModel = modelCustomInput.value.trim();
 });
@@ -1481,24 +1558,19 @@ uiLangSelect.addEventListener("change", () => {
 });
 
 openrouterFreeOnlyCheckbox.addEventListener("change", () => {
-  ++modelRequestGeneration;
   chrome.storage.sync.set({ openrouterFreeOnly: openrouterFreeOnlyCheckbox.checked });
   if (providerSelect.value === "openrouter") {
-    if (openrouterFreeOnlyCheckbox.checked) {
-      const selected = modelSelect.value;
-      const presets = PROVIDERS.openrouter.models;
-      modelCatalogNotice = { fallback: false, unavailable: presets.includes(selected) ? "" : selected };
-      populateModels(presets, selected, "openrouter", { requireSelection: true });
-      renderModelCatalogNotice();
-    }
+    invalidateModelCatalog();
     refreshProviderModels();
   }
 });
 
 openrouterSourceSelect.addEventListener("change", () => {
-  ++modelRequestGeneration;
   chrome.storage.sync.set({ openrouterSource: openrouterSourceSelect.value });
-  if (providerSelect.value === "openrouter") refreshProviderModels();
+  if (providerSelect.value === "openrouter") {
+    invalidateModelCatalog();
+    refreshProviderModels();
+  }
 });
 
 refreshOpenrouterBtn.addEventListener("click", () => {
@@ -1519,7 +1591,7 @@ refreshYandexBtn.addEventListener("click", () => {
 });
 
 saveButton.addEventListener("click", async () => {
-  if (settingsBusy || keyLoadPending) return;
+  if (settingsBusy || keyLoadPending || catalogPending) return;
   const provider = providerSelect.value;
   const isCustom = provider === "custom";
   const modelValue = isCustom ? modelCustomInput.value.trim() : modelSelect.value;
@@ -1533,6 +1605,7 @@ saveButton.addEventListener("click", async () => {
     provider,
     apiUrl: normalizeProviderApiUrl(provider, apiUrlInput.value),
     model: modelValue,
+    modelMigrationVersion: MODEL_MIGRATION_VERSION,
     modelByProvider: { ...savedModelsByProvider, [provider]: modelValue },
     customApiUrl: savedCustomApiUrl,
     customModel: savedCustomModel,

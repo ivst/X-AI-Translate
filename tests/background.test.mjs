@@ -148,6 +148,12 @@ check(Object.keys(contentResponse.config).some((key) => /apiKey|apiUrl|history|l
   false, "No keys, endpoint or translation history exposed to content scripts");
 for (const key of Object.keys(syncStore)) delete syncStore[key];
 
+const nativeUrls = {
+  openai: "https://api.openai.com/v1", claude: "https://api.anthropic.com",
+  gemini: "https://generativelanguage.googleapis.com/v1beta/openai", deepseek: "https://api.deepseek.com"
+};
+const nativeConfig = (provider, model, extra = {}) => ({ provider, model, apiUrl: nativeUrls[provider] || "https://example.test/v1", ...extra });
+const migrate = (config) => call("migrateModelConfig", config);
 for (const [provider, oldModel, newModel] of [
   ["openai", "gpt-4o-mini", "gpt-6-luna"],
   ["claude", "claude-3-5-haiku-latest", "claude-haiku-5-5"],
@@ -155,9 +161,11 @@ for (const [provider, oldModel, newModel] of [
   ["deepseek", "deepseek-v4-flash", "deepseek-flash"],
   ["custom", "gpt-4o-mini", "gpt-4o-mini"]
 ]) {
-  check(call("resolveModelForProvider", { provider, model: oldModel }), newModel, `${provider} model migration`);
+  check(call("resolveModelForProvider", migrate(nativeConfig(provider, oldModel))), newModel, `${provider} saved model migration`);
+  check(call("resolveModelForProvider", migrate(nativeConfig(provider, oldModel, { modelMigrationVersion: 1 }))), oldModel, `${provider} explicitly saved ID is preserved`);
 }
-const lunaBody = call("buildTranslateRequestBody", { provider: "openai", model: "gpt-4o-mini" }, "Hello", "ru", "en", true);
+check(migrate(nativeConfig("openai", "gpt-4o-mini", { apiUrl: "https://example.test/v1" })).model, "gpt-4o-mini", "Compatible endpoint model is preserved");
+const lunaBody = call("buildTranslateRequestBody", migrate(nativeConfig("openai", "gpt-4o-mini")), "Hello", "ru", "en", true);
 check(lunaBody.reasoning_effort, "none", "GPT-6 Luna disables reasoning for translation");
 check(lunaBody.model, "gpt-6-luna", "Luna is used for legacy OpenAI model");
 
@@ -181,13 +189,13 @@ check(
   "Claude messages URL"
 );
 check(
-  call("resolveModelForProvider", { provider: "deepseek", model: "deepseek-chat" }),
+  call("resolveModelForProvider", migrate(nativeConfig("deepseek", "deepseek-chat"))),
   "deepseek-flash",
   "DeepSeek retired alias"
 );
 const legacyChatBody = call(
   "buildTranslateRequestBody",
-  { provider: "deepseek", model: "deepseek-chat", deepseekThinkingEnabled: true },
+  migrate(nativeConfig("deepseek", "deepseek-chat", { deepseekThinkingEnabled: true })),
   "こんにちは",
   "ru",
   "ja",
@@ -197,7 +205,7 @@ check(legacyChatBody.model, "deepseek-flash", "Legacy chat uses DeepSeek V4 Flas
 check(legacyChatBody.thinking.type, "disabled", "Legacy chat preserves non-thinking semantics");
 const legacyReasonerBody = call(
   "buildTranslateRequestBody",
-  { provider: "deepseek", model: "deepseek-reasoner", deepseekThinkingEnabled: false },
+  migrate(nativeConfig("deepseek", "deepseek-reasoner", { deepseekThinkingEnabled: false })),
   "こんにちは",
   "ru",
   "ja",
@@ -215,9 +223,10 @@ const currentFlashBody = call(
 );
 check(currentFlashBody.thinking.type, "enabled", "Current DeepSeek models respect the user setting");
 
-Object.assign(syncStore, { provider: "deepseek", model: "deepseek-reasoner", deepseekThinkingEnabled: false });
+Object.assign(syncStore, nativeConfig("deepseek", "deepseek-reasoner", { deepseekThinkingEnabled: false, modelMigrationVersion: 0 }));
 let migratedDeepSeek = await call("migrateLegacyModelConfig", {
   provider: "deepseek",
+  apiUrl: nativeUrls.deepseek,
   model: "deepseek-reasoner",
   deepseekThinkingEnabled: false
 });
@@ -226,20 +235,22 @@ check(migratedDeepSeek.deepseekThinkingEnabled, true, "Reasoner migration enable
 check(syncStore.model, "deepseek-flash", "DeepSeek migration is persisted");
 check(syncStore.deepseekThinkingEnabled, true, "Persisted reasoner migration enables thinking");
 
-Object.assign(syncStore, { provider: "deepseek", model: "deepseek-chat", deepseekThinkingEnabled: true });
+Object.assign(syncStore, nativeConfig("deepseek", "deepseek-chat", { deepseekThinkingEnabled: true, modelMigrationVersion: 0 }));
 migratedDeepSeek = await call("migrateLegacyModelConfig", {
   provider: "deepseek",
+  apiUrl: nativeUrls.deepseek,
   model: "deepseek-chat",
   deepseekThinkingEnabled: true
 });
 check(migratedDeepSeek.deepseekThinkingEnabled, false, "Chat migration disables thinking");
 
-Object.assign(syncStore, { provider: "deepseek", model: "deepseek-reasoner", deepseekThinkingEnabled: false });
+Object.assign(syncStore, nativeConfig("deepseek", "deepseek-reasoner", { deepseekThinkingEnabled: false, modelMigrationVersion: 0 }));
 const originalSyncSet = chrome.storage.sync.set;
 chrome.storage.sync.set = () => Promise.reject(new Error("Sync quota exceeded"));
 try {
   migratedDeepSeek = await call("migrateLegacyModelConfig", {
     provider: "deepseek",
+    apiUrl: nativeUrls.deepseek,
     model: "deepseek-reasoner",
     deepseekThinkingEnabled: false
   });
@@ -437,8 +448,9 @@ check(typeof listeners.command, "function", "Keyboard command listener registere
 
 const deepSeekOptionsStart = optionsSource.indexOf("async function migrateLegacyModelConfig");
 const deepSeekOptionsEnd = optionsSource.indexOf("const PROVIDERS");
-const deepSeekOptionsSyncStore = { provider: "deepseek", model: "deepseek-reasoner", deepseekThinkingEnabled: false };
+const deepSeekOptionsSyncStore = nativeConfig("deepseek", "deepseek-reasoner", { deepseekThinkingEnabled: false });
 const deepSeekOptionsContext = vm.createContext({
+  URL,
   chrome: { storage: { sync: storageArea(deepSeekOptionsSyncStore) } }
 });
 vm.runInContext(modelSource, deepSeekOptionsContext);
@@ -461,7 +473,7 @@ check(Array.from(filterDeepSeekModels([
   { id: "deepseek-v4-flash" },
   { id: "deepseek-flash" },
   { id: "deepseek-v4-pro" }
-])), ["deepseek-flash", "deepseek-v4-pro"], "Options collapse legacy DeepSeek aliases");
+])), ["deepseek-chat", "deepseek-flash", "deepseek-reasoner", "deepseek-v4-flash", "deepseek-v4-pro"], "Options preserve advertised DeepSeek IDs");
 
 const keyHelpersStart = optionsSource.indexOf("function getKeyByProviderFromStore");
 const keyHelpersEnd = optionsSource.indexOf("function getLanguageDisplayName");

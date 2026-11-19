@@ -53,6 +53,14 @@ async function waitForFetch(fetches, predicate) {
   assert.fail("Expected model catalog request was not made");
 }
 
+async function waitForCatalog(el) {
+  for (let i = 0; i < 100; i++) {
+    if (!el("save").disabled) return;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  assert.fail("Catalog did not finish loading");
+}
+
 async function makeOptions() {
   const elements = new Map();
   const el = (id) => {
@@ -93,7 +101,8 @@ async function makeOptions() {
       return request.promise;
     },
     AbortSignal, URL, console, TextEncoder, crypto: webcrypto,
-    setTimeout() {}
+    setTimeout(callback, delay) { return delay === 350 ? setTimeout(callback, 0) : null; },
+    clearTimeout
   });
   for (const script of scripts) vm.runInContext(script, context);
   await tick();
@@ -145,12 +154,16 @@ test("late key reads and model responses cannot overwrite a newly selected provi
   assert.equal(local.apiKeyByProvider.claude, "claude-key");
   assert.equal(local.apiKeyByProvider.openai, "openai-key");
   await select("openai");
+  const openai = await waitForFetch(fetches, (request) => request.url.includes("openai.com"));
+  answer(openai, ["gpt-6-luna", "gpt-6.2-sol"]);
+  await tick();
   assert.equal(el("model").value, "gpt-6-luna");
   el("model").value = "gpt-6.2-sol";
   await el("save").fire("click");
   assert.equal(sync.modelByProvider.openai, "gpt-6.2-sol");
   assert.equal(sync.modelByProvider.claude, "claude-sonnet-5-5");
   await select("claude");
+  await waitForCatalog(el);
   assert.equal(el("model").value, "claude-sonnet-5-5");
 });
 
@@ -168,7 +181,7 @@ test("catalog filters accept only text models and require known zero prices for 
   const filterOpenAI = vm.runInContext("filterOpenAIModels", context);
   assert.deepEqual(Array.from(filterOpenAI([
     { id: "gpt-4o-mini" }, { id: "gpt-6-luna" }, { id: "gpt-realtime-2" }, { id: "gpt-image-2" }
-  ])), ["gpt-6-luna"]);
+  ])), ["gpt-4o-mini", "gpt-6-luna"]);
 });
 
 const catalogCases = [
@@ -218,14 +231,11 @@ for (const [loader, provider, modelA, modelB] of catalogCases) {
 
 test("filtered selections require explicit replacement and an empty catalog allows saving with presets", async () => {
   const { context, el, sync, fetches, select, answer } = await makeOptions();
+  vm.runInContext('savedModelsByProvider.openai = "gpt-image-2"', context);
   await select("openai");
   const first = await waitForFetch(fetches, () => true);
-  answer(first, ["gpt-6-luna"]);
+  answer(first, ["gpt-image-2", "gpt-6-luna"]);
   await tick();
-  const populate = vm.runInContext("populateModels", context);
-  populate(["gpt-6-luna"], "gpt-image-2", "openai", { preserveUnlisted: true });
-  assert.equal(el("model").value, "gpt-image-2");
-
   const refresh = vm.runInContext("refreshProviderModels", context);
   const pending = refresh({ force: true });
   const second = await waitForFetch(fetches, (request) => request !== first);
@@ -258,6 +268,127 @@ test("filtered selections require explicit replacement and an empty catalog allo
   answer(fourth, ["gpt-image-2"]);
   await tick();
   assert.equal(el("status").textContent, savedStatus, "background refresh does not overwrite save status");
+});
+
+test("catalog filters preserve advertised legacy IDs and never synthesize replacement IDs", async () => {
+  const { context } = await makeOptions();
+  for (const [name, catalog, expected] of [
+    ["OpenAI", [{ id: "gpt-4o-mini" }], ["gpt-4o-mini"]],
+    ["DeepSeek", [{ id: "deepseek-chat" }, { id: "deepseek-v4-flash-vision-exp" }], ["deepseek-chat"]],
+    ["Claude", [{ id: "claude-3-5-haiku-latest" }], ["claude-3-5-haiku-latest"]],
+    ["Gemini", [{ name: "models/gemini-2.0-flash", supportedGenerationMethods: ["generateContent"] }], ["gemini-2.0-flash"]]
+  ]) {
+    const filter = vm.runInContext(`filter${name}Models`, context);
+    assert.deepEqual(Array.from(filter(catalog)), expected);
+  }
+});
+
+test("old catalog schema is rejected and explicitly selected legacy model is saved unchanged", async () => {
+  const { context, el, local, sync, fetches, select, answer } = await makeOptions();
+  local.openai_models_cache_v2 = { ts: Date.now(), apiUrl: "https://api.openai.com/v1",
+    keyFingerprint: createHash("sha256").update("openai-key").digest("hex"), models: ["invented-model"] };
+  await select("openai");
+  const request = await waitForFetch(fetches, () => true);
+  answer(request, ["gpt-4o-mini"]);
+  await tick();
+  assert.deepEqual(el("model").options.map((option) => option.value), ["", "gpt-4o-mini"]);
+  el("model").value = "gpt-4o-mini";
+  el("model").fire("change");
+  await el("save").fire("click");
+  assert.equal(sync.model, "gpt-4o-mini");
+  assert.equal(sync.modelMigrationVersion, 1);
+  assert.equal(vm.runInContext("migrateModelConfig", context)(sync).model, "gpt-4o-mini");
+});
+
+test("OpenRouter free-only keeps the remembered eligible model instead of the preset", async () => {
+  const { context, el, local, sync, fetches, select } = await makeOptions();
+  local.apiKeyByProvider.openrouter = "router-key";
+  vm.runInContext('savedModelsByProvider.openrouter = "vendor/free-model:free"', context);
+  await select("openrouter");
+  const request = await waitForFetch(fetches, () => true);
+  assert.equal(el("save").disabled, true);
+  request.resolve(new Response(JSON.stringify({ data: [
+    { id: "vendor/free-model:free", pricing: { prompt: "0", completion: "0" } },
+    { id: "openrouter/free", pricing: { prompt: "0", completion: "0" } }
+  ] })));
+  await tick();
+  assert.equal(el("model").value, "vendor/free-model:free");
+  assert.equal(el("modelCatalogNotice").style.display, "none");
+  await el("save").fire("click");
+  assert.equal(sync.model, "vendor/free-model:free");
+});
+
+test("credential edits invalidate previous account models and block persistence until new catalog resolves", async () => {
+  const { el, sync, local, fetches, select, answer } = await makeOptions();
+  await select("openai");
+  const initial = await waitForFetch(fetches, () => true);
+  answer(initial, ["gpt-6-luna", "gpt-old-account"]);
+  await tick();
+  el("model").value = "gpt-old-account";
+  el("model").fire("change");
+  el("apiKey").value = "new-key";
+  el("apiKey").fire("input");
+  assert.equal(el("save").disabled, true);
+  assert.deepEqual(el("model").options, []);
+  await el("save").fire("click");
+  assert.equal(sync.provider, "googletranslate");
+  assert.equal(local.apiKeyByProvider.openai, "openai-key");
+  const fresh = await waitForFetch(fetches, (request) => request !== initial);
+  assert.equal(fresh.options.headers.Authorization, "Bearer new-key");
+  answer(fresh, ["gpt-new-account"]);
+  await tick();
+  assert.deepEqual(el("model").options.map((option) => option.value), ["", "gpt-new-account"]);
+  assert.equal(el("model").value, "");
+  await el("save").fire("click");
+  assert.equal(sync.provider, "googletranslate");
+  el("model").value = "gpt-new-account";
+  el("model").fire("change");
+  await el("save").fire("click");
+  assert.equal(sync.model, "gpt-new-account");
+  assert.equal(local.apiKeyByProvider.openai, "new-key");
+});
+
+test("endpoint edits do not reuse an old catalog when the new endpoint fails", async () => {
+  const { el, fetches, select, answer } = await makeOptions();
+  await select("openai");
+  const initial = await waitForFetch(fetches, () => true);
+  answer(initial, ["gpt-6-luna", "gpt-account-only"]);
+  await tick();
+  el("model").value = "gpt-account-only";
+  el("model").fire("change");
+  el("apiUrl").value = "https://other.example/v1";
+  el("apiUrl").fire("input");
+  assert.equal(el("save").disabled, true);
+  assert.deepEqual(el("model").options, []);
+  const fresh = await waitForFetch(fetches, (request) => request !== initial);
+  assert.equal(fresh.url, "https://other.example/v1/models");
+  fresh.reject(new Error("Offline"));
+  await tick();
+  assert.deepEqual(el("model").options.map((option) => option.value), ["", "gpt-6-luna", "gpt-6.2-sol"]);
+  assert.equal(el("model").value, "");
+  assert.match(el("modelCatalogNotice").textContent, /unverified preset models/);
+});
+
+test("OpenRouter catalog cache also distinguishes endpoints, Gemini uses its configured endpoint", async () => {
+  const { context, fetches } = await makeOptions();
+  const getRouter = vm.runInContext("getOpenrouterModels", context);
+  const first = getRouter("router-key", false, "public");
+  const native = await waitForFetch(fetches, () => true);
+  native.resolve(new Response(JSON.stringify({ data: [{ id: "native/model" }] })));
+  assert.deepEqual(Array.from(await first), ["native/model"]);
+  const second = getRouter("router-key", false, "public", false, () => true, "https://proxy.example/api/v1");
+  const proxy = await waitForFetch(fetches, (request) => request !== native);
+  assert.equal(proxy.url, "https://proxy.example/api/v1/models");
+  proxy.resolve(new Response(JSON.stringify({ data: [{ id: "proxy/model" }] })));
+  assert.deepEqual(Array.from(await second), ["proxy/model"]);
+
+  const getGemini = vm.runInContext("getGeminiModels", context);
+  const third = getGemini("https://gemini.example/v1", "gemini-key");
+  const gemini = await waitForFetch(fetches, (request) => request !== native && request !== proxy);
+  assert.equal(gemini.url, "https://gemini.example/v1/models");
+  assert.equal(gemini.options.headers.Authorization, "Bearer gemini-key");
+  gemini.resolve(new Response(JSON.stringify({ data: [{ id: "gemini-2.0-flash" }] })));
+  assert.deepEqual(Array.from(await third), ["gemini-2.0-flash"]);
 });
 
 test("late responses for an old API key cannot overwrite the newer model cache", async () => {
