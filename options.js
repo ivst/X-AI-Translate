@@ -1293,6 +1293,7 @@ let keyLoadPending = false;
 let catalogPending = false;
 let pendingCatalogSelection = null;
 let catalogRefreshTimer = null;
+let catalogRefreshRetries = 0;
 
 function hasModelCatalog(provider) {
   return Boolean(PROVIDERS[provider] && !isDirectProvider(provider) && provider !== "custom");
@@ -1336,8 +1337,12 @@ function applyCatalogModels(models, selected, provider, { requested = true } = {
   renderModelCatalogNotice();
 }
 
+function isCatalogInvalidated() {
+  return catalogPending && pendingCatalogSelection !== null;
+}
+
 function updateSettingsControls() {
-  saveButton.disabled = settingsBusy || keyLoadPending || catalogPending;
+  saveButton.disabled = settingsBusy || keyLoadPending || isCatalogInvalidated();
   providerSelect.disabled = settingsBusy;
   syncApiKeysCheckbox.disabled = settingsBusy || keyLoadPending;
   apiKeyInput.disabled = settingsBusy || keyLoadPending;
@@ -1357,7 +1362,22 @@ function isCurrentProvider(provider, generation) {
 
 async function refreshProviderModels({ force = false, showStatus = false } = {}) {
   const provider = providerSelect.value;
-  if (!hasModelCatalog(provider) || settingsBusy || keyLoadPending) return;
+  if (!hasModelCatalog(provider)) return;
+  if (settingsBusy || keyLoadPending) {
+    // A refresh requested while the form is busy must not leave the catalog
+    // stuck in its invalidated/loading state; retry shortly, bounded so a
+    // permanently busy form cannot spin on a timer forever.
+    if (catalogRefreshRetries < 20) {
+      catalogRefreshRetries += 1;
+      cancelScheduledCatalogRefresh();
+      catalogRefreshTimer = setTimeout(() => {
+        catalogRefreshTimer = null;
+        refreshProviderModels({ force, showStatus });
+      }, 350);
+    }
+    return;
+  }
+  catalogRefreshRetries = 0;
   cancelScheduledCatalogRefresh();
   const generation = providerGeneration;
   const request = ++modelRequestGeneration;
@@ -1600,7 +1620,7 @@ refreshYandexBtn.addEventListener("click", () => {
 });
 
 saveButton.addEventListener("click", async () => {
-  if (settingsBusy || keyLoadPending || catalogPending) return;
+  if (settingsBusy || keyLoadPending || isCatalogInvalidated()) return;
   const provider = providerSelect.value;
   const isCustom = provider === "custom";
   const modelValue = isCustom ? modelCustomInput.value.trim() : modelSelect.value;

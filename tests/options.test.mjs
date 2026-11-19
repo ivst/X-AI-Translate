@@ -483,3 +483,35 @@ test("catalog notice is localized on the first render", async () => {
   });
   assert.match(el("modelCatalogNotice").textContent, /^Обновление списка/);
 });
+
+test("background catalog refresh keeps saving available", async () => {
+  const { el, sync, fetches, select, answer } = await makeOptions();
+  await select("openai");
+  const initial = await waitForFetch(fetches, () => true);
+  answer(initial, ["gpt-6-luna"]);
+  await tick();
+  await el("save").fire("click");
+  assert.equal(sync.provider, "openai");
+  const silent = await waitForFetch(fetches, (request) => request !== initial);
+  assert.equal(el("save").disabled, false, "a background refresh does not block saving");
+  answer(silent, ["gpt-6-luna"]);
+  await tick();
+  assert.equal(el("save").disabled, false);
+});
+
+test("a catalog refresh requested while the form is busy retries", async () => {
+  const { el, context, fetches, select, answer } = await makeOptions();
+  await select("openai");
+  const initial = await waitForFetch(fetches, () => true);
+  answer(initial, ["gpt-6-luna"]);
+  await tick();
+  vm.runInContext("settingsBusy = true", context);
+  const refresh = vm.runInContext("refreshProviderModels", context);
+  await refresh({ force: true });
+  assert.equal(fetches.length, 1, "no request is made while the form is busy");
+  vm.runInContext("settingsBusy = false", context);
+  const retried = await waitForFetch(fetches, (request) => request !== initial);
+  answer(retried, ["gpt-6-luna"]);
+  await tick();
+  assert.equal(el("save").disabled, false);
+});
