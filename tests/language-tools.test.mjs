@@ -5,11 +5,11 @@ import { test } from "node:test";
 
 const source = await readFile(new URL("../language-tools.js", import.meta.url), "utf8");
 
-function tools({ result, detect, translator, active = false, now } = {}) {
+function tools({ result, detect, translator, active = false, now, timers } = {}) {
   const context = vm.createContext({
     chrome: { i18n: { detectLanguage: detect || (async () => result) } },
     Translator: translator, navigator: { userActivation: typeof active === "object" ? active : { isActive: active } },
-    setTimeout, clearTimeout,
+    setTimeout: timers?.setTimeout || setTimeout, clearTimeout: timers?.clearTimeout || clearTimeout,
     ...(now ? { __now: now } : {})
   });
   if (now) vm.runInContext("Date.now = () => __now();", context);
@@ -210,4 +210,61 @@ test("availability checks are coalesced across buttons for the same pair", async
   clock += 6000;
   await t.createManualTranslationPreparation().prepare("four", "en", "ru").pending;
   assert.equal(checks, 2, "the cached status expires");
+});
+
+test("worker translation uses fresh availability immediately after a manual download", async () => {
+  const active = { isActive: false };
+  let availability = "downloadable";
+  let checks = 0;
+  const t = tools({
+    active,
+    now: () => 1000,
+    translator: {
+      async availability() { checks++; return availability; },
+      async create() {
+        assert.ok(active.isActive || availability === "available");
+        availability = "available";
+        return { translate: async text => text };
+      }
+    }
+  });
+  const manual = t.createManualTranslationPreparation();
+  await manual.prepare("manual", "en", "ru").pending;
+  active.isActive = true;
+  assert.equal(await manual.translate("manual", "en", "ru"), "manual");
+  active.isActive = false;
+  assert.equal(await t.translateLocally("automatic", "en", "ru"), "automatic");
+  assert.equal(checks, 2, "non-gesture request must not reuse the pre-download status");
+});
+
+test("a hung availability check times out, releases the shared promise and allows a retry", async () => {
+  let timeout;
+  let resolveOld;
+  let checks = 0;
+  const t = tools({
+    active: true,
+    timers: { setTimeout(callback) { timeout = callback; return 1; }, clearTimeout() {} },
+    translator: {
+      availability() {
+        if (++checks === 1) return new Promise(resolve => { resolveOld = resolve; });
+        return Promise.resolve("available");
+      },
+      async create() { return { translate: async () => "Recovered" }; }
+    }
+  });
+  const first = t.createManualTranslationPreparation();
+  const second = t.createManualTranslationPreparation();
+  const pending = first.prepare("first", "en", "ru").pending;
+  const shared = second.prepare("second", "en", "ru").pending;
+  assert.equal(checks, 1);
+  assert.equal(typeof timeout, "function", "availability must have a timeout");
+  timeout();
+  await Promise.all([pending, shared]);
+  await assert.rejects(first.translate("first", "en", "ru"), /timed out/i);
+  await assert.rejects(second.translate("second", "en", "ru"), /timed out/i);
+  assert.equal(await first.translate("first", "en", "ru"), "Recovered");
+  resolveOld("unavailable");
+  await Promise.resolve();
+  assert.equal(await t.createManualTranslationPreparation().translate("third", "en", "ru"), "Recovered");
+  assert.equal(checks, 2, "late timed-out result must not poison the cache");
 });

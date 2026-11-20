@@ -94,32 +94,41 @@
 
   const AVAILABILITY_CACHE_TTL_MS = 5000;
   const AVAILABILITY_CACHE_LIMIT = 64;
+  const AVAILABILITY_TIMEOUT_MS = 10000;
   const availabilityCache = new Map();
   const pendingAvailability = new Map();
 
-  // Feeds create many buttons for the same pair, so a recent result is reused
-  // briefly and concurrent checks are shared. create() remains authoritative at
-  // click time, so a slightly stale status is harmless (NotAllowedError is
-  // translated into an actionable activation error).
-  async function checkPairAvailability(api, pair) {
+  // Reuse recent results only while preparing manual controls; worker-driven
+  // translation needs fresh status (e.g. immediately after a manual download).
+  // Concurrent checks are shared in either path.
+  async function checkPairAvailability(api, pair, reuseRecent) {
     const key = JSON.stringify(pair);
     const cached = availabilityCache.get(key);
-    if (cached && Date.now() - cached.at < AVAILABILITY_CACHE_TTL_MS) return cached.availability;
+    if (reuseRecent && cached && Date.now() - cached.at < AVAILABILITY_CACHE_TTL_MS) return cached.availability;
     let pending = pendingAvailability.get(key);
     if (!pending) {
-      pending = Promise.resolve(api.availability(pair)).then((availability) => {
+      let timeoutId;
+      pending = Promise.race([
+        Promise.resolve(api.availability(pair)),
+        new Promise((_, reject) => {
+          timeoutId = setTimeout(() => reject(new Error("Chrome Translator availability check timed out. Try again.")), AVAILABILITY_TIMEOUT_MS);
+        })
+      ]).then((availability) => {
         availabilityCache.set(key, { availability, at: Date.now() });
         while (availabilityCache.size > AVAILABILITY_CACHE_LIMIT) {
           availabilityCache.delete(availabilityCache.keys().next().value);
         }
         return availability;
-      }).finally(() => pendingAvailability.delete(key));
+      }).finally(() => {
+        clearTimeout(timeoutId);
+        pendingAvailability.delete(key);
+      });
       pendingAvailability.set(key, pending);
     }
     return pending;
   }
 
-  async function prepareLocalTranslation(text, sourceLang, targetLang) {
+  async function prepareLocalTranslation(text, sourceLang, targetLang, reuseRecent = false) {
     const api = globalThis.Translator;
     if (!api?.availability || !api?.create) {
       throw new Error("Chrome Built-in Translator is unavailable in this document. Use a supported desktop Chrome (138+) or choose another provider.");
@@ -130,7 +139,7 @@
     if (!source) throw new Error("Could not reliably detect the source language. Select it explicitly.");
     if (source === target) return { api, pair: null };
     const pair = { sourceLanguage: source, targetLanguage: target };
-    const availability = await checkPairAvailability(api, pair);
+    const availability = await checkPairAvailability(api, pair, reuseRecent);
     if (availability === "unavailable") {
       throw new Error("Chrome Built-in Translator does not support this language pair or device. Choose another provider.");
     }
@@ -191,7 +200,7 @@
       }
       const entry = { text, sourceLang, targetLang };
       current = entry;
-      entry.pending = prepareLocalTranslation(text, sourceLang, targetLang).then(
+      entry.pending = prepareLocalTranslation(text, sourceLang, targetLang, true).then(
         value => { entry.value = value; },
         error => { entry.failed = true; entry.error = error; }
       );
