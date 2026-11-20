@@ -46,6 +46,8 @@ const CONTENT_STRINGS_FALLBACK = {
 let currentConfig = { ...DEFAULT_CONFIG };
 let selectionButton = null;
 let selectionPreparation = null;
+let selectionPrepToken = 0;
+let selectionPreparing = false;
 let lastSelectionText = "";
 let lastSelectionAnchor = { left: 0, top: 0 };
 let selectionTimer = null;
@@ -294,6 +296,7 @@ function ensureSelectionButton() {
     event.stopPropagation();
   });
   btn.addEventListener("click", () => {
+    if (btn.disabled) return;
     const text = lastSelectionText.trim();
     if (!text) return;
     btn.classList.add(TRANSLATE_LOADING_CLASS);
@@ -326,7 +329,13 @@ function ensureSelectionButton() {
   });
   document.body.appendChild(btn);
   selectionButton = btn;
+  btn.disabled = selectionPreparing;
   return btn;
+}
+
+function setSelectionPreparing(preparing) {
+  selectionPreparing = preparing;
+  if (selectionButton) selectionButton.disabled = preparing;
 }
 
 function hideSelectionButton() {
@@ -334,15 +343,27 @@ function hideSelectionButton() {
     selectionButton.style.display = "none";
   }
   selectionPreparation?.clear();
+  selectionPrepToken += 1;
+  setSelectionPreparing(false);
 }
 
 function prepareSelectionTranslation() {
   if (currentConfig.provider !== "chrome" || !globalThis.AITranslateLanguage || !lastSelectionText.trim()) {
     selectionPreparation?.clear();
+    selectionPrepToken += 1;
+    setSelectionPreparing(false);
     return;
   }
   selectionPreparation ||= globalThis.AITranslateLanguage.createManualTranslationPreparation();
-  selectionPreparation.prepare(lastSelectionText.trim(), currentConfig.sourceLang || "auto", currentConfig.targetLang || "en");
+  const entry = selectionPreparation.prepare(lastSelectionText.trim(), currentConfig.sourceLang || "auto", currentConfig.targetLang || "en");
+  const token = ++selectionPrepToken;
+  // Hold the button until the pair is prepared so the first click always
+  // reaches Translator.create() inside its own activation.
+  setSelectionPreparing(true);
+  const settled = () => {
+    if (token === selectionPrepToken) setSelectionPreparing(false);
+  };
+  entry.pending.then(settled, settled);
 }
 
 function clearSelectionStreamState() {
@@ -852,8 +873,16 @@ function enhanceInlineText(el) {
     btn.textContent = strings.buttonIdle;
     const preparation = currentConfig.provider === "chrome"
       ? globalThis.AITranslateLanguage?.createManualTranslationPreparation() : null;
-    preparation?.prepare(text, currentConfig.sourceLang || "auto", currentConfig.targetLang || "en");
+    if (preparation) {
+      const entry = preparation.prepare(text, currentConfig.sourceLang || "auto", currentConfig.targetLang || "en");
+      // Keep the first click from landing before the pair is prepared, so
+      // Translator.create() runs inside the click's own activation.
+      btn.disabled = true;
+      const ready = () => { btn.disabled = false; };
+      entry.pending.then(ready, ready);
+    }
     btn.addEventListener("click", () => {
+      if (btn.disabled) return;
       startInlineTranslation(el, btn, result, strings, { manual: true, preparation });
     });
     container.appendChild(btn);

@@ -5,12 +5,14 @@ import { test } from "node:test";
 
 const source = await readFile(new URL("../language-tools.js", import.meta.url), "utf8");
 
-function tools({ result, detect, translator, active = false } = {}) {
+function tools({ result, detect, translator, active = false, now } = {}) {
   const context = vm.createContext({
     chrome: { i18n: { detectLanguage: detect || (async () => result) } },
     Translator: translator, navigator: { userActivation: typeof active === "object" ? active : { isActive: active } },
-    setTimeout, clearTimeout
+    setTimeout, clearTimeout,
+    ...(now ? { __now: now } : {})
   });
+  if (now) vm.runInContext("Date.now = () => __now();", context);
   vm.runInContext(source, context);
   return context.AITranslateLanguage;
 }
@@ -183,4 +185,29 @@ test("preparation failures can be retried rather than cached permanently", async
   await assert.rejects(manual.translate("text", "en", "ru"), /Transient failure/);
   assert.equal(await manual.translate("text", "en", "ru"), "ok");
   assert.equal(checks, 2);
+});
+
+test("availability checks are coalesced across buttons for the same pair", async () => {
+  let checks = 0;
+  let clock = 1000;
+  const t = tools({
+    active: true,
+    now: () => clock,
+    translator: {
+      async availability() { checks++; return "downloadable"; },
+      async create() { return { translate: async text => text }; }
+    }
+  });
+  const first = t.createManualTranslationPreparation();
+  const second = t.createManualTranslationPreparation();
+  await Promise.all([
+    first.prepare("one", "en", "ru").pending,
+    second.prepare("two", "en", "ru").pending
+  ]);
+  assert.equal(checks, 1, "concurrent preparations share one availability check");
+  await t.createManualTranslationPreparation().prepare("three", "en", "ru").pending;
+  assert.equal(checks, 1, "a burst of buttons reuses the recent result");
+  clock += 6000;
+  await t.createManualTranslationPreparation().prepare("four", "en", "ru").pending;
+  assert.equal(checks, 2, "the cached status expires");
 });

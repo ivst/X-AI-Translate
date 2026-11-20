@@ -92,7 +92,32 @@
     }
   }
 
+  const AVAILABILITY_CACHE_TTL_MS = 5000;
+  const AVAILABILITY_CACHE_LIMIT = 64;
+  const availabilityCache = new Map();
   const pendingAvailability = new Map();
+
+  // Feeds create many buttons for the same pair, so a recent result is reused
+  // briefly and concurrent checks are shared. create() remains authoritative at
+  // click time, so a slightly stale status is harmless (NotAllowedError is
+  // translated into an actionable activation error).
+  async function checkPairAvailability(api, pair) {
+    const key = JSON.stringify(pair);
+    const cached = availabilityCache.get(key);
+    if (cached && Date.now() - cached.at < AVAILABILITY_CACHE_TTL_MS) return cached.availability;
+    let pending = pendingAvailability.get(key);
+    if (!pending) {
+      pending = Promise.resolve(api.availability(pair)).then((availability) => {
+        availabilityCache.set(key, { availability, at: Date.now() });
+        while (availabilityCache.size > AVAILABILITY_CACHE_LIMIT) {
+          availabilityCache.delete(availabilityCache.keys().next().value);
+        }
+        return availability;
+      }).finally(() => pendingAvailability.delete(key));
+      pendingAvailability.set(key, pending);
+    }
+    return pending;
+  }
 
   async function prepareLocalTranslation(text, sourceLang, targetLang) {
     const api = globalThis.Translator;
@@ -105,15 +130,7 @@
     if (!source) throw new Error("Could not reliably detect the source language. Select it explicitly.");
     if (source === target) return { api, pair: null };
     const pair = { sourceLanguage: source, targetLanguage: target };
-    // Many feed items use the same pair. Share concurrent availability checks
-    // only; the download status can change and must not be cached globally.
-    const key = JSON.stringify(pair);
-    let pending = pendingAvailability.get(key);
-    if (!pending) {
-      pending = Promise.resolve(api.availability(pair)).finally(() => pendingAvailability.delete(key));
-      pendingAvailability.set(key, pending);
-    }
-    const availability = await pending;
+    const availability = await checkPairAvailability(api, pair);
     if (availability === "unavailable") {
       throw new Error("Chrome Built-in Translator does not support this language pair or device. Choose another provider.");
     }

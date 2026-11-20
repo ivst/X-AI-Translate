@@ -291,6 +291,9 @@ test("manual inline Chrome translation starts locally, reports progress and only
   const h = manualTranslationHarness();
   const button = h.container.querySelector(".ai-translate-btn");
   const result = h.container.querySelector(".ai-translate-result");
+  assert.equal(button.disabled, true, "the button waits for the prepared pair");
+  await settleTranslation();
+  assert.equal(button.disabled, false, "the button enables once prepared");
   h.click(button);
   await settleTranslation();
   const translation = h.translations[0];
@@ -314,6 +317,7 @@ test("manual inline Chrome translation starts locally, reports progress and only
 test("manual selection Chrome translation starts locally and displays and records errors", async () => {
   const h = manualTranslationHarness();
   const button = h.selection();
+  await settleTranslation();
   h.click(button);
   await settleTranslation();
   const translation = h.translations[0];
@@ -333,6 +337,7 @@ test("manual selection Chrome translation starts locally and displays and record
 
 test("late local results do not replace the timeout or persist stale history", async () => {
   const h = manualTranslationHarness();
+  await settleTranslation();
   h.click(h.container.querySelector(".ai-translate-btn"));
   await settleTranslation();
   h.expire();
@@ -365,7 +370,9 @@ test("prepared inline and selection clicks enter Translator.create synchronously
   await settleTranslation();
 
   const button = h.selection();
+  assert.equal(button.disabled, true, "selection waits for its preparation");
   await settleTranslation();
+  assert.equal(button.disabled, false, "selection enables once prepared");
   h.click(button);
   assert.equal(h.translations.length, 2, "selection create runs before the click handler returns");
   await settleTranslation();
@@ -374,24 +381,21 @@ test("prepared inline and selection clicks enter Translator.create synchronously
   assert.equal(h.requests.filter(request => request.action === "recordLocalTranslation").length, 2);
 });
 
-test("a slow availability check permits a fresh click without another wait", async () => {
-  let resolveAvailability, checks = 0;
+test("the inline button waits for its prepared pair before the first click", async () => {
+  let resolveAvailability;
   const h = manualTranslationHarness({}, {
     strictGesture: true,
-    availability: () => {
-      checks++;
-      return new Promise(resolve => { resolveAvailability = resolve; });
-    }
+    availability: () => new Promise(resolve => { resolveAvailability = resolve; })
   });
   const button = h.container.querySelector(".ai-translate-btn");
+  assert.equal(button.disabled, true, "button waits for the prepared pair");
   h.click(button);
+  assert.equal(h.translations.length, 0, "a click before preparation cannot start translation");
   resolveAvailability("downloadable");
   await settleTranslation();
-  assert.match(h.container.querySelector(".ai-translate-result").textContent, /Click the translate button again/);
-  assert.equal(h.translations.length, 0);
+  assert.equal(button.disabled, false, "button enables once prepared");
   h.click(button);
-  assert.equal(h.translations.length, 1);
-  assert.equal(checks, 1, "retry must reuse preparation");
+  assert.equal(h.translations.length, 1, "the first enabled click creates the translator synchronously");
   await settleTranslation();
   h.translations[0].resolve("Hello");
   await settleTranslation();
