@@ -1076,6 +1076,9 @@ async function streamTranslateUncached(text, onUpdate, prepared, overrides) {
     try {
       json = JSON.parse(data);
     } catch (error) {
+      // A discarded event may contain a missing text delta. Even if the
+      // stream later reports a normal stop, never cache the partial output.
+      cacheable = false;
       currentEvent = "";
       return false;
     }

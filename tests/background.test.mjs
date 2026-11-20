@@ -610,6 +610,29 @@ fetchMock = async () => sseResponse([
 ]);
 await call("streamTranslate", "truncated", () => {});
 check(localStore.translationCacheV1.length, 0, "Unterminated stream is not cached");
+for (const [suffix, terminal] of [
+  ["done", "data: [DONE]\n\n"],
+  ["stop", 'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n']
+]) {
+  const input = "malformed-stream-" + suffix;
+  const updates = [];
+  fetchMock = async () => sseResponse([
+    'data: {"choices":[{"delta":{"content":"First fragment"}}]}\n\n',
+    'data: {"choices":[{"delta":\n\n',
+    terminal
+  ]);
+  await call("streamTranslate", input, (text, done) => updates.push({ text, done }));
+  check(updates.at(-1), { text: "First fragment", done: true }, "Malformed event preserves existing display behavior");
+  check(localStore.translationCacheV1.length, 0, "Malformed SSE is not cached even with a terminal marker");
+  let retryCalls = 0;
+  fetchMock = async () => {
+    retryCalls++;
+    return jsonResponse({ choices: [{ message: { content: "Recovered translation" }, finish_reason: "stop" }] });
+  };
+  check(await call("translateText", input), "Recovered translation", "Retry returns complete content");
+  check(retryCalls, 1, "Retry after malformed SSE calls the provider instead of returning cached partial text");
+  await call("clearTranslationCache");
+}
 fetchMock = async () => sseResponse([
   'data: {"choices":[{"delta":{"content":"Complete"}}]}\n\n', "data: [DONE]\n\n"
 ]);
