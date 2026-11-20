@@ -8,7 +8,7 @@ const source = await readFile(new URL("../language-tools.js", import.meta.url), 
 function tools({ result, detect, translator, active = false } = {}) {
   const context = vm.createContext({
     chrome: { i18n: { detectLanguage: detect || (async () => result) } },
-    Translator: translator, navigator: { userActivation: { isActive: active } },
+    Translator: translator, navigator: { userActivation: typeof active === "object" ? active : { isActive: active } },
     setTimeout, clearTimeout
   });
   vm.runInContext(source, context);
@@ -132,4 +132,55 @@ test("Chrome local provider reports unavailable API, pair, and activation withou
   await assert.rejects(tools({ translator: downloadable }).translateLocally("text", "auto", "ru"), /reliably detect/);
   const downloading = { ...downloadable, availability: async () => "downloading" };
   await assert.rejects(tools({ translator: downloading }).translateLocally("text", "en", "ru"), /user gesture/);
+});
+
+test("manual preparation resolves auto detection before a strict click and ignores stale preparations", async () => {
+  const pending = new Map();
+  const active = { isActive: false };
+  const created = [];
+  const t = tools({
+    active,
+    detect: text => new Promise(resolve => pending.set(text, resolve)),
+    translator: {
+      async availability() { return "downloadable"; },
+      async create(pair) {
+        assert.equal(active.isActive, true);
+        created.push(pair);
+        return { translate: async text => text };
+      }
+    }
+  });
+  const manual = t.createManualTranslationPreparation();
+  const old = manual.prepare("Bonjour", "auto", "en");
+  const next = manual.prepare("こんにちは", "auto", "ru");
+  pending.get("こんにちは")({ isReliable: true, languages: [{ language: "ja", percentage: 100 }] });
+  await next.pending;
+  pending.get("Bonjour")({ isReliable: true, languages: [{ language: "fr", percentage: 100 }] });
+  await old.pending;
+  active.isActive = true;
+  const translated = manual.translate("こんにちは", "auto", "ru");
+  active.isActive = false;
+  assert.equal(created.length, 1, "create occurs before any await in the click");
+  assert.equal(created[0].sourceLanguage, "ja");
+  assert.equal(created[0].targetLanguage, "ru");
+  assert.equal(await translated, "こんにちは");
+});
+
+test("preparation failures can be retried rather than cached permanently", async () => {
+  let checks = 0;
+  const t = tools({
+    active: true,
+    translator: {
+      async availability() {
+        if (++checks === 1) throw new Error("Transient failure");
+        return "downloadable";
+      },
+      async create() { return { translate: async () => "ok" }; }
+    }
+  });
+  const manual = t.createManualTranslationPreparation();
+  await manual.prepare("text", "en", "ru").pending;
+  await assert.rejects(manual.translate("text", "en", "ru"), /Transient failure/);
+  assert.equal(await manual.translate("text", "en", "ru"), "ok");
+  assert.equal(checks, 2);
 });

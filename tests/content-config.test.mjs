@@ -183,7 +183,7 @@ test("same-script foreign language detection controls inline buttons and waits f
   assert.ok(container.querySelector(".ai-translate-btn"), "German text is offered for translation into English");
 });
 
-function manualTranslationHarness(config = {}) {
+function manualTranslationHarness(config = {}, { strictGesture = false, availability = async () => "downloadable" } = {}) {
   const requests = [];
   const timers = new Map();
   const documentEvents = {};
@@ -232,7 +232,7 @@ function manualTranslationHarness(config = {}) {
     } },
     navigator: { userActivation: activation },
     Translator: {
-      async availability() { return "downloadable"; },
+      availability,
       async create(options) {
         assert.equal(activation.isActive, true, "create must retain the click's activation");
         const translation = { options };
@@ -269,7 +269,11 @@ function manualTranslationHarness(config = {}) {
   });
   vm.runInContext(languageSource, context);
   vm.runInContext(source, context);
-  const click = node => { activation.isActive = true; node.events.click(); };
+  const click = node => {
+    activation.isActive = true;
+    node.events.click();
+    if (strictGesture) activation.isActive = false;
+  };
   const selection = () => {
     documentEvents.selectionchange();
     [...timers.values()].find(timer => timer.delay === 80).callback();
@@ -349,4 +353,47 @@ test("automatic Chrome and manual cloud translations still use the worker", asyn
   cloud.click(cloud.selection());
   assert.equal(cloud.requests.at(-1).action, "translateStream");
   assert.equal(cloud.translations.length, 0);
+});
+
+test("prepared inline and selection clicks enter Translator.create synchronously", async () => {
+  const h = manualTranslationHarness({}, { strictGesture: true });
+  await settleTranslation();
+  h.click(h.container.querySelector(".ai-translate-btn"));
+  assert.equal(h.translations.length, 1, "inline create runs before the click handler returns");
+  await settleTranslation();
+  h.translations[0].resolve("Inline");
+  await settleTranslation();
+
+  const button = h.selection();
+  await settleTranslation();
+  h.click(button);
+  assert.equal(h.translations.length, 2, "selection create runs before the click handler returns");
+  await settleTranslation();
+  h.translations[1].resolve("Selection");
+  await settleTranslation();
+  assert.equal(h.requests.filter(request => request.action === "recordLocalTranslation").length, 2);
+});
+
+test("a slow availability check permits a fresh click without another wait", async () => {
+  let resolveAvailability, checks = 0;
+  const h = manualTranslationHarness({}, {
+    strictGesture: true,
+    availability: () => {
+      checks++;
+      return new Promise(resolve => { resolveAvailability = resolve; });
+    }
+  });
+  const button = h.container.querySelector(".ai-translate-btn");
+  h.click(button);
+  resolveAvailability("downloadable");
+  await settleTranslation();
+  assert.match(h.container.querySelector(".ai-translate-result").textContent, /Click the translate button again/);
+  assert.equal(h.translations.length, 0);
+  h.click(button);
+  assert.equal(h.translations.length, 1);
+  assert.equal(checks, 1, "retry must reuse preparation");
+  await settleTranslation();
+  h.translations[0].resolve("Hello");
+  await settleTranslation();
+  assert.equal(h.container.querySelector(".ai-translate-result").textContent, "Hello");
 });

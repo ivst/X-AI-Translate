@@ -92,8 +92,9 @@
     }
   }
 
-  // Translator is a document API (not exposed in MV3 service workers).
-  async function translateLocally(text, sourceLang, targetLang, onProgress) {
+  const pendingAvailability = new Map();
+
+  async function prepareLocalTranslation(text, sourceLang, targetLang) {
     const api = globalThis.Translator;
     if (!api?.availability || !api?.create) {
       throw new Error("Chrome Built-in Translator is unavailable in this document. Use a supported desktop Chrome (138+) or choose another provider.");
@@ -102,23 +103,52 @@
       ? await detectReliableLanguage(text) : normalizeTranslatorLanguage(sourceLang);
     const target = normalizeTranslatorLanguage(targetLang);
     if (!source) throw new Error("Could not reliably detect the source language. Select it explicitly.");
-    if (source === target) return text;
+    if (source === target) return { api, pair: null };
     const pair = { sourceLanguage: source, targetLanguage: target };
-    const availability = await api.availability(pair);
+    // Many feed items use the same pair. Share concurrent availability checks
+    // only; the download status can change and must not be cached globally.
+    const key = JSON.stringify(pair);
+    let pending = pendingAvailability.get(key);
+    if (!pending) {
+      pending = Promise.resolve(api.availability(pair)).finally(() => pendingAvailability.delete(key));
+      pendingAvailability.set(key, pending);
+    }
+    const availability = await pending;
     if (availability === "unavailable") {
       throw new Error("Chrome Built-in Translator does not support this language pair or device. Choose another provider.");
     }
+    return { api, pair, availability };
+  }
+
+  function activationError() {
+    const error = new Error("Chrome needs a user gesture for this language pair. Click the translate button again on this page or use Quick Translate in the popup.");
+    error.code = "translator-user-activation";
+    return error;
+  }
+
+  // No awaits before create(): a prepared manual click starts the native
+  // download in its original event handler.
+  async function translatePrepared(text, { api, pair, availability }, onProgress) {
+    if (!pair) return text;
     if (availability !== "available" && !globalThis.navigator?.userActivation?.isActive) {
-      throw new Error("Chrome needs a user gesture for this language pair. Click the translate button on this page or use Quick Translate in the popup.");
+      throw activationError();
     }
     let translator;
     try {
-      translator = await api.create({
-        ...pair,
-        ...(onProgress ? { monitor(monitor) {
-          monitor.addEventListener("downloadprogress", (event) => onProgress(event.loaded));
-        } } : {})
-      });
+      try {
+        translator = await api.create({
+          ...pair,
+          ...(onProgress ? { monitor(monitor) {
+            monitor.addEventListener("downloadprogress", (event) => onProgress(event.loaded));
+          } } : {})
+        });
+      } catch (error) {
+        // A previously available pair may no longer be available when clicked.
+        if (error?.name === "NotAllowedError" && !globalThis.navigator?.userActivation?.isActive) {
+          throw activationError();
+        }
+        throw error;
+      }
       const result = await translator.translate(text);
       if (typeof result !== "string" || !result.trim()) throw new Error("Chrome Translator returned an empty response.");
       return result;
@@ -127,5 +157,43 @@
     }
   }
 
-  globalThis.AITranslateLanguage = { normalizeLanguage, detectReliableLanguage, translateLocally };
+  // Translator is a document API (not exposed in MV3 service workers).
+  async function translateLocally(text, sourceLang, targetLang, onProgress) {
+    return translatePrepared(text, await prepareLocalTranslation(text, sourceLang, targetLang), onProgress);
+  }
+
+  // One preparation per manual control, tied to its exact input and pair.
+  // A click while preparation is still pending can finish it; if the gesture
+  // expires, keep the prepared pair ready for a fresh explicit click.
+  function createManualTranslationPreparation() {
+    let current;
+    function clear() { current = undefined; }
+    function prepare(text, sourceLang, targetLang) {
+      if (current?.text === text && current.sourceLang === sourceLang && current.targetLang === targetLang) {
+        return current;
+      }
+      const entry = { text, sourceLang, targetLang };
+      current = entry;
+      entry.pending = prepareLocalTranslation(text, sourceLang, targetLang).then(
+        value => { entry.value = value; },
+        error => { entry.failed = true; entry.error = error; }
+      );
+      return entry;
+    }
+    async function translate(text, sourceLang, targetLang, onProgress) {
+      const entry = prepare(text, sourceLang, targetLang);
+      try {
+        if (!entry.value && !entry.failed) await entry.pending;
+        if (entry.failed) throw entry.error;
+        return await translatePrepared(text, entry.value, onProgress);
+      } catch (error) {
+        // Retain only the preparation needed to retry with a new gesture.
+        if (current === entry && error?.code !== "translator-user-activation") clear();
+        throw error;
+      }
+    }
+    return { prepare, translate, clear };
+  }
+
+  globalThis.AITranslateLanguage = { normalizeLanguage, detectReliableLanguage, translateLocally, createManualTranslationPreparation };
 })();

@@ -45,6 +45,7 @@ const CONTENT_STRINGS_FALLBACK = {
 
 let currentConfig = { ...DEFAULT_CONFIG };
 let selectionButton = null;
+let selectionPreparation = null;
 let lastSelectionText = "";
 let lastSelectionAnchor = { left: 0, top: 0 };
 let selectionTimer = null;
@@ -248,7 +249,7 @@ function armInlineStreamTimeout(requestId) {
 
 // Start in the document that received the click, without a service-worker
 // round trip before Translator.create() checks transient user activation.
-async function startManualLocalTranslation(request, isActive, strings) {
+async function startManualLocalTranslation(request, isActive, strings, preparation) {
   const { requestId, target, text, sourceLang, targetLang } = request;
   const update = (text, done, error = false) => {
     if (!isActive()) return;
@@ -263,13 +264,13 @@ async function startManualLocalTranslation(request, isActive, strings) {
     if (!isExtensionContextValid() || !globalThis.AITranslateLanguage) {
       throw new Error("Local translation is unavailable. Reload this page or use Quick Translate in the popup.");
     }
-    const translated = await globalThis.AITranslateLanguage.translateLocally(
+    const translated = await (preparation || globalThis.AITranslateLanguage.createManualTranslationPreparation()).translate(
       text, sourceLang, targetLang,
       (progress) => update(`${strings.buttonLoading} ${Math.round(progress * 100)}%`, false)
     );
     update(translated, true);
   } catch (err) {
-    update(err.message || String(err), true, true);
+    update(err?.message || String(err), true, true);
   }
 }
 
@@ -310,7 +311,7 @@ function ensureSelectionButton() {
       targetLang: currentConfig.targetLang || "en"
     };
     if (currentConfig.provider === "chrome") {
-      startManualLocalTranslation(request, () => activeSelectionRequestId === requestId, strings);
+      startManualLocalTranslation(request, () => activeSelectionRequestId === requestId, strings, selectionPreparation);
       return;
     }
     const sent = sendMessageSafe(request, (err) => {
@@ -332,6 +333,16 @@ function hideSelectionButton() {
   if (selectionButton) {
     selectionButton.style.display = "none";
   }
+  selectionPreparation?.clear();
+}
+
+function prepareSelectionTranslation() {
+  if (currentConfig.provider !== "chrome" || !globalThis.AITranslateLanguage || !lastSelectionText.trim()) {
+    selectionPreparation?.clear();
+    return;
+  }
+  selectionPreparation ||= globalThis.AITranslateLanguage.createManualTranslationPreparation();
+  selectionPreparation.prepare(lastSelectionText.trim(), currentConfig.sourceLang || "auto", currentConfig.targetLang || "en");
 }
 
 function clearSelectionStreamState() {
@@ -737,7 +748,7 @@ function startInlineTranslation(el, btn, result, strings, options = {}) {
     targetLang: currentConfig.targetLang || "en"
   };
   if (options.manual && currentConfig.provider === "chrome") {
-    startManualLocalTranslation(request, () => inlineStreams.has(requestId), strings);
+    startManualLocalTranslation(request, () => inlineStreams.has(requestId), strings, options.preparation);
     return true;
   }
   const sent = sendMessageSafe(request, (err) => {
@@ -839,8 +850,11 @@ function enhanceInlineText(el) {
   const strings = getLocaleStrings(currentConfig.uiLang || currentConfig.targetLang);
   if (btn) {
     btn.textContent = strings.buttonIdle;
+    const preparation = currentConfig.provider === "chrome"
+      ? globalThis.AITranslateLanguage?.createManualTranslationPreparation() : null;
+    preparation?.prepare(text, currentConfig.sourceLang || "auto", currentConfig.targetLang || "en");
     btn.addEventListener("click", () => {
-      startInlineTranslation(el, btn, result, strings, { manual: true });
+      startInlineTranslation(el, btn, result, strings, { manual: true, preparation });
     });
     container.appendChild(btn);
   }
@@ -1116,6 +1130,7 @@ function refreshContentConfig(endpointChanged = false) {
     } else if (selectionButton) {
       const strings = getLocaleStrings(currentConfig.uiLang || currentConfig.targetLang);
       selectionButton.title = strings.selectionTitle;
+      if (selectionButton.style.display !== "none") prepareSelectionTranslation();
     }
     const inlineSettingsChanged = [
       "targetLang", "uiLang", "enableXInlineTranslation", "enableYoutubeInlineTranslation",
@@ -1201,6 +1216,7 @@ function handleSelectionUpdate() {
       return;
     }
     lastSelectionText = text;
+    prepareSelectionTranslation();
     positionSelectionButton(rect);
   }, 80);
 }
