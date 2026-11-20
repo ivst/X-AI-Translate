@@ -1,4 +1,5 @@
 importScripts("model-config.js");
+importScripts("translation-cache.js");
 
 const DEFAULT_CONFIG = {
   provider: "googletranslate",
@@ -10,6 +11,7 @@ const DEFAULT_CONFIG = {
   targetLang: "en",
   sourceLang: "auto",
   syncApiKeys: false,
+  translationCacheEnabled: false,
   overlayMode: "center",
   enableXInlineTranslation: true,
   enableYoutubeInlineTranslation: true,
@@ -51,6 +53,9 @@ async function getContentConfig() {
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== "sync") return;
+  if (Object.hasOwn(changes, "translationCacheEnabled") && changes.translationCacheEnabled.newValue !== true) {
+    clearTranslationCache();
+  }
   const relevant = Object.keys(changes).some(
     (key) => Object.hasOwn(CONTENT_CONFIG_DEFAULTS, key) || key === "apiUrl"
   );
@@ -187,7 +192,7 @@ function ensureContentScript(tabId) {
           return;
         }
         chrome.scripting.executeScript(
-          { target: { tabId }, files: ["i18n.js", "content.js"] },
+          { target: { tabId }, files: ["i18n.js", "language-tools.js", "content.js"] },
           () => {
             if (chrome.runtime.lastError) {
               finish(false);
@@ -357,7 +362,7 @@ function buildPrompt(text, targetLang, sourceLang) {
   ].join("\n");
 }
 
-const DIRECT_TRANSLATION_PROVIDERS = new Set(["googletranslate", "deepl"]);
+const DIRECT_TRANSLATION_PROVIDERS = new Set(["googletranslate", "deepl", "chrome"]);
 
 function isDirectTranslationProvider(provider) {
   return DIRECT_TRANSLATION_PROVIDERS.has(provider);
@@ -457,12 +462,40 @@ async function translateWithDeepL(text, targetLang, sourceLang, apiUrl, apiKey) 
   return translated.trim();
 }
 
-async function translateDirect(text, config, targetLang, sourceLang) {
+async function translateDirect(text, config, targetLang, sourceLang, authToken, overrides) {
   if (config.provider === "googletranslate") {
     return translateWithGoogle(text, targetLang, sourceLang, config.apiUrl);
   }
-  const authToken = await getAuthorizationToken(config);
+  if (config.provider === "chrome") {
+    return translateInTab(text, sourceLang, targetLang, overrides.tabId);
+  }
   return translateWithDeepL(text, targetLang, sourceLang, config.apiUrl, authToken);
+}
+
+async function translateInTab(text, sourceLang, targetLang, tabId) {
+  if (!tabId) throw new Error("Chrome Built-in Translator requires a browser document. Use Quick Translate in the popup.");
+  const payload = { action: "translateLocally", text, sourceLang, targetLang };
+  const send = () => new Promise((resolve, reject) => {
+    chrome.tabs.sendMessage(tabId, payload, { frameId: 0 }, (response) => {
+      const error = chrome.runtime.lastError;
+      if (error) reject(new Error(error.message));
+      else resolve(response);
+    });
+  });
+  let response;
+  try {
+    response = await send();
+  } catch (error) {
+    // A closed port or another translation failure is not a missing receiver.
+    // Only re-inject for a missing top-frame content script.
+    if (!/receiving end does not exist/i.test(error?.message || "")) throw error;
+    if (!await ensureContentScript(tabId)) throw new Error("Chrome Translator cannot access this page. Use Quick Translate in the popup.");
+    response = await send();
+  }
+  if (!response?.ok || typeof response.text !== "string" || !response.text.trim()) {
+    throw new Error(response?.error || "Chrome Built-in Translator returned no text.");
+  }
+  return response.text;
 }
 
 function normalizeApiBaseUrl(provider, apiUrl) {
@@ -568,7 +601,7 @@ function resolveModelForProvider(config) {
 }
 
 async function getAuthorizationToken(config) {
-  if (config.provider === "googletranslate") {
+  if (config.provider === "googletranslate" || config.provider === "chrome") {
     return "";
   }
   const provider = config.provider;
@@ -882,17 +915,38 @@ function extractDeltaFromOpenAIChunk(json) {
   return typeof textDelta === "string" ? textDelta : "";
 }
 
-async function translateText(text, overrides = {}) {
+async function prepareTranslation(text, overrides) {
+  const cacheEpoch = translationCacheEpoch;
   let config = await chrome.storage.sync.get(DEFAULT_CONFIG);
   config = await migrateLegacyModelConfig(config);
   const targetLang = overrides.targetLang || config.targetLang;
   const sourceLang = overrides.sourceLang || config.sourceLang;
+  const authToken = await getAuthorizationToken(config);
+  const cache = await translationCacheContext(config, text, targetLang, sourceLang, authToken, overrides.incognito, cacheEpoch);
+  return { config, targetLang, sourceLang, authToken, cache };
+}
+
+async function translateText(text, overrides = {}) {
+  const prepared = await prepareTranslation(text, overrides);
+  const cached = await lookupTranslationCache(prepared.cache);
+  if (cached !== null) return cached;
+  const result = await translateTextUncached(text, prepared, overrides);
+  await storeTranslationCache(prepared.cache, result);
+  return result;
+}
+
+function isCacheableFinishReason(data) {
+  const reason = data?.choices?.[0]?.finish_reason ?? data?.stop_reason;
+  return reason == null || ["stop", "end_turn", "stop_sequence"].includes(reason);
+}
+
+async function translateTextUncached(text, prepared, overrides) {
+  const { config, targetLang, sourceLang, authToken } = prepared;
   if (isDirectTranslationProvider(config.provider)) {
-    return translateDirect(text, config, targetLang, sourceLang);
+    return translateDirect(text, config, targetLang, sourceLang, authToken, overrides);
   }
 
   const url = buildChatCompletionsUrl(config);
-  const authToken = await getAuthorizationToken(config);
   const body = buildTranslateRequestBody(config, text, targetLang, sourceLang, false);
 
   const response = await requestTranslation(
@@ -908,6 +962,7 @@ async function translateText(text, overrides = {}) {
   }
 
   const data = await readResponseJson(response);
+  if (!isCacheableFinishReason(data)) prepared.cache = null;
   const content = config.provider === "claude"
     ? extractClaudeText(data)
     : extractTextFromOpenAICompatible(data);
@@ -920,17 +975,29 @@ async function translateText(text, overrides = {}) {
 }
 
 async function streamTranslate(text, onUpdate, overrides = {}) {
-  let config = await chrome.storage.sync.get(DEFAULT_CONFIG);
-  config = await migrateLegacyModelConfig(config);
-  if (isDirectTranslationProvider(config.provider) || config.provider === "yandexgpt") {
-    const translated = await translateText(text, overrides);
-    onUpdate(translated, true);
+  const prepared = await prepareTranslation(text, overrides);
+  const cached = await lookupTranslationCache(prepared.cache);
+  if (cached !== null) {
+    onUpdate(cached, true);
     return;
   }
+  let finalText = null;
+  // Only cache results after a successful request, never partial/error updates.
+  const cacheable = await streamTranslateUncached(text, (value, done) => {
+    if (done) finalText = value;
+    onUpdate(value, done);
+  }, prepared, overrides);
+  if (cacheable && finalText !== null) await storeTranslationCache(prepared.cache, finalText);
+}
+
+async function streamTranslateUncached(text, onUpdate, prepared, overrides) {
+  const { config, targetLang, sourceLang, authToken } = prepared;
+  if (isDirectTranslationProvider(config.provider) || config.provider === "yandexgpt") {
+    const translated = await translateTextUncached(text, prepared, overrides);
+    onUpdate(translated, true);
+    return true;
+  }
   const url = buildChatCompletionsUrl(config);
-  const authToken = await getAuthorizationToken(config);
-  const targetLang = overrides.targetLang || config.targetLang;
-  const sourceLang = overrides.sourceLang || config.sourceLang;
   const body = buildTranslateRequestBody(config, text, targetLang, sourceLang, true);
 
   const response = await requestTranslation(
@@ -955,7 +1022,7 @@ async function streamTranslate(text, onUpdate, overrides = {}) {
       throw new Error("Empty response from API.");
     }
     onUpdate(content, true);
-    return;
+    return isCacheableFinishReason(data);
   }
 
   releaseResponseTimeout(response);
@@ -966,6 +1033,8 @@ async function streamTranslate(text, onUpdate, overrides = {}) {
   let currentEvent = "";
   let eventData = [];
   let completed = false;
+  let cacheable = true;
+  let explicitStop = false;
 
   const finish = () => {
     if (completed) return true;
@@ -1007,6 +1076,9 @@ async function streamTranslate(text, onUpdate, overrides = {}) {
     try {
       json = JSON.parse(data);
     } catch (error) {
+      // A discarded event may contain a missing text delta. Even if the
+      // stream later reports a normal stop, never cache the partial output.
+      cacheable = false;
       currentEvent = "";
       return false;
     }
@@ -1014,6 +1086,11 @@ async function streamTranslate(text, onUpdate, overrides = {}) {
     const streamError = getStreamError(json);
     if (streamError) {
       throw new Error(`API stream error: ${streamError}`);
+    }
+    const reason = json?.choices?.[0]?.finish_reason ?? json?.delta?.stop_reason;
+    if (reason != null) {
+      if (["stop", "end_turn", "stop_sequence"].includes(reason)) explicitStop = true;
+      else cacheable = false;
     }
 
     if (config.provider === "claude") {
@@ -1080,20 +1157,23 @@ async function streamTranslate(text, onUpdate, overrides = {}) {
     const lines = buffer.split("\n");
     buffer = lines.pop() || "";
     for (const line of lines) {
-      if (processLine(line)) return;
+      if (processLine(line)) return cacheable;
     }
   }
   buffer += decoder.decode();
-  if (buffer && processLine(buffer)) return;
-  if (dispatchEvent()) return;
+  if (buffer && processLine(buffer)) return cacheable;
+  if (dispatchEvent()) return cacheable;
   finish();
+  // Some compatible servers close without a terminal SSE event. Preserve
+  // their existing display behavior, but don't persist possibly partial text.
+  return explicitStop && cacheable;
 }
 
 function saveLastTranslation(text, isError) {
   const payload = isError
     ? { lastError: text }
     : { lastTranslation: text, lastError: "" };
-  chrome.storage.local.set(payload);
+  return chrome.storage.local.set(payload);
 }
 
 function showTranslatingState(tabId, requestId) {
@@ -1133,7 +1213,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       if (done) {
         saveLastTranslation(text, false);
       }
-    });
+    }, { tabId: tab?.id, incognito: tab?.incognito });
   } catch (err) {
     if (tab?.id) {
       const errorText = `Error: ${err.message || String(err)}`;
@@ -1151,16 +1231,36 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.action === "clearTranslationCache" && sender.url?.startsWith(chrome.runtime.getURL(""))) {
+    clearTranslationCache().then((ok) => sendResponse({ ok }));
+    return true;
+  }
   if (message?.action === "getContentConfig" && sender.tab?.id != null) {
     getContentConfig()
       .then((config) => sendResponse({ ok: true, config }))
       .catch(() => sendResponse({ ok: false }));
     return true;
   }
+  if (message?.action === "recordLocalTranslation" && sender.tab?.id != null
+      && sender.id === chrome.runtime.id) {
+    if (typeof message.text !== "string" || !message.text.trim() || typeof message.error !== "boolean") {
+      sendResponse({ ok: false });
+      return;
+    }
+    // Manual Chrome translations finish inside the content document. Keep
+    // the same last-result/error behavior without starting another translation.
+    storageAccessReady
+      .then(() => saveLastTranslation(message.error ? `Error: ${message.text}` : message.text, message.error))
+      .then(() => sendResponse({ ok: true }))
+      .catch(() => sendResponse({ ok: false }));
+    return true;
+  }
   if (message?.action === "translateText" && message.text) {
     translateText(message.text, {
       sourceLang: message.sourceLang,
-      targetLang: message.targetLang
+      targetLang: message.targetLang,
+      tabId: sender.tab?.id,
+      incognito: sender.tab?.incognito || chrome.extension?.inIncognitoContext || message.incognito === true
     })
       .then((translated) => sendResponse({ ok: true, text: translated }))
       .catch((err) => sendResponse({ ok: false, error: err.message || String(err) }));
@@ -1182,7 +1282,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
     }, {
       sourceLang: message.sourceLang,
-      targetLang: message.targetLang
+      targetLang: message.targetLang,
+      tabId: sender.tab.id,
+      incognito: sender.tab.incognito
     }).catch((err) => {
       const errorText = `Error: ${err.message || String(err)}`;
       sendToTab(sender.tab.id, {
@@ -1259,7 +1361,7 @@ chrome.commands.onCommand.addListener((command) => {
           if (done) {
             saveLastTranslation(text, false);
           }
-        }).catch((err) => {
+        }, { tabId: tab.id, incognito: tab.incognito }).catch((err) => {
           const errorText = `Error: ${err.message || String(err)}`;
           sendToTab(tab.id, {
             action: "streamUpdate",

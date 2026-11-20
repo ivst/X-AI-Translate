@@ -11,6 +11,8 @@ const files = [
   "manifest.json",
   "background.js",
   "model-config.js",
+  "language-tools.js",
+  "translation-cache.js",
   "content.js",
   "i18n.js",
   "options.html",

@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "default_locale": "en",
   "name": "AI Translate for X and YouTube (BYOK)",
-  "version": "0.3.3",
+  "version": "0.4.0",
   "minimum_chrome_version": "103",
   "description": "__MSG_extDescription__",
   "permissions": ["contextMenus", "storage", "activeTab", "scripting", "notifications"],
@@ -43,7 +43,7 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["i18n.js", "content.js"],
+      "js": ["i18n.js", "language-tools.js", "content.js"],
       "css": ["styles.css"]
     }
   ],

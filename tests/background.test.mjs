@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
+import { webcrypto } from "node:crypto";
 
 const source = await readFile(new URL("../background.js", import.meta.url), "utf8");
 const modelSource = await readFile(new URL("../model-config.js", import.meta.url), "utf8");
+const cacheSource = await readFile(new URL("../translation-cache.js", import.meta.url), "utf8");
 const optionsSource = await readFile(new URL("../options.js", import.meta.url), "utf8");
 const localStore = {};
 const syncStore = {};
@@ -56,6 +58,7 @@ const chrome = {
   },
   notifications: { create() {} },
   runtime: {
+    id: "extension",
     lastError: null,
     onInstalled: chromeEvent("installed"),
     onMessage: chromeEvent("message")
@@ -86,11 +89,12 @@ const chrome = {
 
 const context = vm.createContext({
   importScripts(name) {
-    assert.equal(name, "model-config.js");
-    vm.runInContext(modelSource, context);
+    assert.ok(["model-config.js", "translation-cache.js"].includes(name));
+    vm.runInContext(name === "model-config.js" ? modelSource : cacheSource, context);
   },
   AbortController,
   chrome,
+  crypto: webcrypto,
   clearTimeout,
   console,
   fetch: (...args) => fetchMock(...args),
@@ -440,7 +444,7 @@ await assert.rejects(call("fetchWithTimeout", "https://example.com"), /Request t
 assertions += 1;
 
 await call("ensureContentScript", 42);
-check(Array.from(executedScripts.at(-1).files), ["i18n.js", "content.js"], "Dynamic injection includes localization before content script");
+check(Array.from(executedScripts.at(-1).files), ["i18n.js", "language-tools.js", "content.js"], "Dynamic injection includes shared language tools before content script");
 
 check(typeof listeners.message, "function", "Runtime listener registered");
 check(typeof listeners.contextMenuClicked, "function", "Context menu listener registered");
@@ -546,5 +550,168 @@ replaceStore(optionLocalStore, { apiKeyByProvider: { openai: "current-local-key"
 await migrateOptionStorage(true);
 check(optionSyncStore.apiKeyByProvider.openai, "current-local-key", "Local-to-sync migration copies the current local key");
 check(Object.keys(optionLocalStore.apiKeyByProvider), [], "Copied local key is removed from local storage");
+
+// Cache hits are shared across popup and streaming paths, but isolated by
+// credential, provider, endpoint, model and language pair.
+Object.assign(syncStore, {
+  provider: "openai", apiUrl: "https://api.openai.com/v1", model: "cache-model",
+  sourceLang: "ja", targetLang: "en", translationCacheEnabled: true, syncApiKeys: false,
+  apiKeyByProvider: {}, apiKey: ""
+});
+localStore.apiKeyByProvider = { openai: "cache-account-one" };
+await call("clearTranslationCache");
+let translationCalls = 0;
+fetchMock = async () => {
+  translationCalls++;
+  return jsonResponse({ choices: [{ message: { content: "Translated text" }, finish_reason: "stop" }] });
+};
+check(await call("translateText", "source-secret"), "Translated text", "First translation succeeds");
+const cachedUpdates = [];
+await call("streamTranslate", "source-secret", (text, done) => cachedUpdates.push({ text, done }));
+check(translationCalls, 1, "Cache shared between regular and streaming translation");
+check(cachedUpdates, [{ text: "Translated text", done: true }], "Cache hit completes stream");
+const cacheSerialized = JSON.stringify(localStore.translationCacheV1);
+check(cacheSerialized.includes("source-secret"), false, "Cache does not store raw source");
+check(cacheSerialized.includes("cache-account-one"), false, "Cache does not store credentials");
+localStore.apiKeyByProvider.openai = "cache-account-two";
+await call("translateText", "source-secret");
+check(translationCalls, 2, "Changed account misses cache");
+await call("translateText", "source-secret", { targetLang: "ru" });
+check(translationCalls, 3, "Changed language misses cache");
+syncStore.model = "cache-model-two";
+await call("translateText", "source-secret");
+check(translationCalls, 4, "Changed model misses cache");
+syncStore.apiUrl = "https://different.example/v1";
+await call("translateText", "source-secret");
+check(translationCalls, 5, "Changed endpoint misses cache");
+await call("translateText", "source-secret", { incognito: true });
+check(translationCalls, 6, "Incognito ignores cache");
+for (const entry of localStore.translationCacheV1) entry.createdAt -= 86400000;
+await call("translateText", "source-secret");
+check(translationCalls, 7, "Expired entries miss cache");
+check(localStore.translationCacheV1.length, 1, "Expired entries are pruned");
+
+let resolveTranslation;
+let startedTranslation;
+const started = new Promise(resolve => { startedTranslation = resolve; });
+fetchMock = async () => {
+  startedTranslation();
+  return new Promise(resolve => { resolveTranslation = resolve; });
+};
+const pendingTranslation = call("translateText", "in-flight");
+await started;
+await call("clearTranslationCache");
+resolveTranslation(jsonResponse({ choices: [{ message: { content: "Done" } }] }));
+await pendingTranslation;
+check(localStore.translationCacheV1.length, 0, "Clear rejects in-flight cache writes");
+
+fetchMock = async () => sseResponse([
+  'data: {"choices":[{"delta":{"content":"Partial"}}]}\n\n'
+]);
+await call("streamTranslate", "truncated", () => {});
+check(localStore.translationCacheV1.length, 0, "Unterminated stream is not cached");
+for (const [suffix, terminal] of [
+  ["done", "data: [DONE]\n\n"],
+  ["stop", 'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n']
+]) {
+  const input = "malformed-stream-" + suffix;
+  const updates = [];
+  fetchMock = async () => sseResponse([
+    'data: {"choices":[{"delta":{"content":"First fragment"}}]}\n\n',
+    'data: {"choices":[{"delta":\n\n',
+    terminal
+  ]);
+  await call("streamTranslate", input, (text, done) => updates.push({ text, done }));
+  check(updates.at(-1), { text: "First fragment", done: true }, "Malformed event preserves existing display behavior");
+  check(localStore.translationCacheV1.length, 0, "Malformed SSE is not cached even with a terminal marker");
+  let retryCalls = 0;
+  fetchMock = async () => {
+    retryCalls++;
+    return jsonResponse({ choices: [{ message: { content: "Recovered translation" }, finish_reason: "stop" }] });
+  };
+  check(await call("translateText", input), "Recovered translation", "Retry returns complete content");
+  check(retryCalls, 1, "Retry after malformed SSE calls the provider instead of returning cached partial text");
+  await call("clearTranslationCache");
+}
+fetchMock = async () => sseResponse([
+  'data: {"choices":[{"delta":{"content":"Complete"}}]}\n\n', "data: [DONE]\n\n"
+]);
+await call("streamTranslate", "complete", () => {});
+check(localStore.translationCacheV1.length, 1, "Completed stream is cached");
+syncStore.translationCacheEnabled = false;
+listeners.storageChanged({ translationCacheEnabled: { oldValue: true, newValue: false } }, "sync");
+await value("translationCacheQueue");
+check(localStore.translationCacheV1.length, 0, "Disabling clears cache");
+
+const cacheEpoch = value("translationCacheEpoch");
+await Promise.all(Array.from({ length: 105 }, (_, i) => call("storeTranslationCache",
+  { key: String(i), epoch: cacheEpoch }, "result")));
+check(localStore.translationCacheV1.length, 100, "Concurrent cache writes respect entry limit");
+check(localStore.translationCacheV1[0].key, "5", "Oldest entries are evicted");
+await call("storeTranslationCache", { key: "large", epoch: cacheEpoch }, "я".repeat(120000));
+check(new TextEncoder().encode(JSON.stringify(localStore.translationCacheV1)).length <= 256 * 1024, true, "Cache respects byte limit");
+await call("storeTranslationCache", { key: "oversized", epoch: cacheEpoch }, "я".repeat(150000));
+check(localStore.translationCacheV1.some(entry => entry.key === "oversized"), false, "Oversized result is not cached");
+await call("clearTranslationCache");
+
+Object.assign(syncStore, { provider: "chrome", model: "chrome-translator", apiUrl: "" });
+let localRequest;
+chrome.tabs.sendMessage = (tabId, message, options, callback) => {
+  localRequest = { tabId, message, options };
+  callback({ ok: true, text: "On-device" });
+};
+fetchMock = async () => { throw new Error("Chrome provider must never use a cloud API"); };
+const localUpdates = [];
+await call("streamTranslate", "original", (text, done) => localUpdates.push({ text, done }), { tabId: 42 });
+check(localRequest.tabId, 42, "Chrome provider routes to the originating tab");
+check(localRequest.message.action, "translateLocally", "Chrome provider uses the document bridge");
+check(localRequest.options.frameId, 0, "Chrome provider targets the main frame");
+check(localUpdates, [{ text: "On-device", done: true }], "Local provider completes stream");
+const historySender = { id: "extension", tab: { id: 42 } };
+const recordHistory = (text, error) => new Promise(resolve => {
+  check(listeners.message({ action: "recordLocalTranslation", text, error }, historySender, resolve),
+    true, "Local result storage keeps response channel open");
+});
+check((await recordHistory("Manual result", false)).ok, true, "Manual local result acknowledged");
+check(localStore.lastTranslation, "Manual result", "Manual local translation is saved");
+check(localStore.lastError, "", "Manual success clears previous errors");
+check((await recordHistory("Unsupported pair", true)).ok, true, "Manual local error acknowledged");
+check(localStore.lastError, "Error: Unsupported pair", "Manual local error is saved");
+check(localStore.lastTranslation, "Manual result", "Errors preserve the last successful translation");
+check(localStore.translationCacheV1.length, 0, "Manual local results bypass the translation cache");
+check(listeners.message({ action: "recordLocalTranslation", text: "invalid", error: false }, { id: "extension" }, () => {}),
+  undefined, "History reporting requires a content tab");
+check(listeners.message({ action: "recordLocalTranslation", text: "invalid", error: false }, { id: "other", tab: { id: 42 } }, () => {}),
+  undefined, "History reporting requires the extension sender");
+let invalidHistoryResponse;
+listeners.message({ action: "recordLocalTranslation", text: {}, error: false }, historySender, response => { invalidHistoryResponse = response; });
+check(invalidHistoryResponse.ok, false, "Malformed history message is rejected");
+check(localStore.lastTranslation, "Manual result", "Invalid history messages cannot overwrite history");
+chrome.tabs.sendMessage = (_id, _message, _options, callback) => callback({ ok: false, error: "Unsupported pair" });
+await assert.rejects(call("streamTranslate", "original", () => {}, { tabId: 42 }), /Unsupported pair/);
+assertions++;
+
+let attempts = 0;
+const injectionsBefore = executedScripts.length;
+chrome.tabs.sendMessage = (tabId, _message, options, callback) => {
+  check(tabId, 43, "Fallback keeps originating tab");
+  check(options.frameId, 0, "Fallback keeps main frame");
+  if (++attempts === 1) {
+    chrome.runtime.lastError = { message: "Could not establish connection. Receiving end does not exist." };
+    callback();
+    chrome.runtime.lastError = null;
+  } else callback({ ok: true, text: "Recovered" });
+};
+check(await call("translateInTab", "original", "ja", "en", 43), "Recovered", "Missing receiver is re-injected");
+check(attempts, 2, "Missing receiver is retried once");
+check(executedScripts.length, injectionsBefore + 1, "Fallback injects the content script");
+chrome.tabs.sendMessage = (_id, _message, _options, callback) => {
+  chrome.runtime.lastError = { message: "The message port closed before a response was received." };
+  callback();
+  chrome.runtime.lastError = null;
+};
+await assert.rejects(call("translateInTab", "original", "ja", "en", 44), /message port closed/);
+assertions++;
+check(executedScripts.length, injectionsBefore + 1, "Closed port must not repeat translation");
 
 console.log(`PASS: ${assertions} assertions for background.js`);

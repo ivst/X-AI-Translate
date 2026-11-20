@@ -15,6 +15,12 @@ const quickInput = document.getElementById("quickInput");
 const quickOutput = document.getElementById("quickOutput");
 const quickTranslateBtn = document.getElementById("quickTranslateBtn");
 let currentUiLang = "en";
+let currentProvider = null;
+let providerChanged = false;
+let quickStateReady = false;
+let quickBusy = false;
+let quickPreparationTimer = null;
+const quickPreparation = globalThis.AITranslateLanguage.createManualTranslationPreparation();
 const QUICK_STATE_KEY = "quickTranslateState";
 const QUICK_STATE_DEFAULT = {
   sourceLang: "auto",
@@ -322,16 +328,50 @@ function restoreQuickState(defaultSource, defaultTarget) {
   const storageLocal = getStorageAreaSafe("local");
   if (!storageLocal) {
     buildQuickLanguageOptions(currentUiLang, defaultSource || "auto", defaultTarget || "en");
+    finishQuickInitialization();
     return;
   }
   storageLocal.get({ [QUICK_STATE_KEY]: null }, (data) => {
-    const state = data[QUICK_STATE_KEY] || {};
+    const state = data?.[QUICK_STATE_KEY] || {};
     const sourceLang = state.sourceLang || defaultSource || QUICK_STATE_DEFAULT.sourceLang;
     const targetLang = state.targetLang || defaultTarget || QUICK_STATE_DEFAULT.targetLang;
     buildQuickLanguageOptions(currentUiLang, sourceLang, targetLang);
     quickInput.value = state.inputText || "";
     quickOutput.value = state.outputText || "";
+    finishQuickInitialization();
   });
+}
+
+function updateQuickButton() {
+  quickTranslateBtn.disabled = !quickStateReady || !currentProvider || quickBusy;
+}
+
+function prepareQuickTranslation() {
+  if (quickPreparationTimer !== null) {
+    clearTimeout(quickPreparationTimer);
+    quickPreparationTimer = null;
+  }
+  const text = (quickInput.value || "").trim();
+  if (!quickStateReady || currentProvider !== "chrome" || !text) {
+    quickPreparation.clear();
+    return;
+  }
+  quickPreparation.prepare(text, quickFromSelect.value, quickToSelect.value);
+}
+
+function scheduleQuickPreparation() {
+  if (quickPreparationTimer !== null) clearTimeout(quickPreparationTimer);
+  // Typing can produce many intermediate strings; only prepare after a pause.
+  quickPreparationTimer = setTimeout(prepareQuickTranslation, 150);
+}
+
+function finishQuickInitialization() {
+  quickStateReady = true;
+  updateQuickButton();
+  prepareQuickTranslation();
+  if (!currentProvider) {
+    quickOutput.value = `${getLocaleStrings(currentUiLang).quick_error || "Error"}: Provider settings unavailable. Reopen the popup.`;
+  }
 }
 
 function getSwapFallbackTarget(prevTarget) {
@@ -352,11 +392,13 @@ openOptionsBtn.addEventListener("click", () => {
 });
 
 const storageSync = getStorageAreaSafe("sync");
+updateQuickButton();
 if (storageSync) {
-  storageSync.get({ uiLang: "en", sourceLang: "auto", targetLang: "en" }, (data) => {
-    currentUiLang = data.uiLang || "en";
+  storageSync.get({ uiLang: "en", sourceLang: "auto", targetLang: "en", provider: "googletranslate" }, (data) => {
+    if (!providerChanged && data && !chrome.runtime?.lastError) currentProvider = data.provider || "googletranslate";
+    currentUiLang = data?.uiLang || "en";
     applyTranslations(currentUiLang);
-    restoreQuickState(data.sourceLang || "auto", data.targetLang || "en");
+    restoreQuickState(data?.sourceLang || "auto", data?.targetLang || "en");
   });
 } else {
   applyTranslations(currentUiLang);
@@ -385,6 +427,13 @@ const storage = (() => {
 })();
 if (storage?.onChanged?.addListener) {
   storage.onChanged.addListener((changes, areaName) => {
+    if (areaName === "sync" && changes.provider) {
+      providerChanged = true;
+      currentProvider = changes.provider.newValue || "googletranslate";
+      updateQuickButton();
+      prepareQuickTranslation();
+      return;
+    }
     if (areaName !== "local") return;
     if (changes.lastTranslation) {
       const value = changes.lastTranslation.newValue || "";
@@ -423,34 +472,68 @@ clearErrorBtn.addEventListener("click", () => {
   });
 });
 
-quickTranslateBtn.addEventListener("click", () => {
+quickTranslateBtn.addEventListener("click", async () => {
+  if (!quickStateReady || !currentProvider || quickBusy) return;
   const text = (quickInput.value || "").trim();
+  const sourceLang = quickFromSelect.value;
+  const targetLang = quickToSelect.value;
   if (!text) {
     quickOutput.value = getLocaleStrings(currentUiLang).quick_empty || "Enter text to translate.";
     saveQuickState();
     return;
   }
 
-  quickTranslateBtn.disabled = true;
+  quickBusy = true;
+  updateQuickButton();
   quickOutput.value = getLocaleStrings(currentUiLang).quick_translating || "Translating...";
   saveQuickState();
 
+  // The local Translator API only exists in documents, not the service
+  // worker. This explicit button click may also authorize the first download.
+  if (currentProvider === "chrome") {
+    try {
+      quickOutput.value = await quickPreparation.translate(
+        text, sourceLang, targetLang,
+        (progress) => {
+          quickOutput.value = `${getLocaleStrings(currentUiLang).quick_translating || "Translating..."} ${Math.round(progress * 100)}%`;
+        }
+      );
+    } catch (err) {
+      quickOutput.value = `${getLocaleStrings(currentUiLang).quick_error || "Error"}: ${err?.message || String(err)}`;
+    } finally {
+      quickBusy = false;
+      updateQuickButton();
+      saveQuickState();
+    }
+    return;
+  }
+
   const runtime = getRuntimeSafe();
   if (!runtime?.sendMessage) {
-    quickTranslateBtn.disabled = false;
+    quickBusy = false;
+    updateQuickButton();
     quickOutput.value = `${getLocaleStrings(currentUiLang).quick_error || "Error"}: Runtime unavailable`;
     saveQuickState();
     return;
   }
+  // Popup messages have no sender.tab in the worker. Resolve incognito from
+  // the current window, and conservatively bypass the cache if unavailable.
+  let incognito = true;
+  try {
+    incognito = Boolean(chrome.extension?.inIncognitoContext
+      || (await chrome.windows.getCurrent()).incognito);
+  } catch (_) {}
   runtime.sendMessage(
     {
       action: "translateText",
       text,
-      sourceLang: quickFromSelect.value,
-      targetLang: quickToSelect.value
+      sourceLang,
+      targetLang,
+      incognito
     },
     (response) => {
-      quickTranslateBtn.disabled = false;
+      quickBusy = false;
+      updateQuickButton();
       if (chrome.runtime?.lastError) {
         quickOutput.value = `${getLocaleStrings(currentUiLang).quick_error || "Error"}: ${chrome.runtime.lastError.message}`;
         saveQuickState();
@@ -468,9 +551,16 @@ quickTranslateBtn.addEventListener("click", () => {
   );
 });
 
-quickFromSelect.addEventListener("change", saveQuickState);
-quickToSelect.addEventListener("change", saveQuickState);
-quickInput.addEventListener("input", scheduleQuickStateSave);
+function quickLanguageChanged() {
+  saveQuickState();
+  prepareQuickTranslation();
+}
+quickFromSelect.addEventListener("change", quickLanguageChanged);
+quickToSelect.addEventListener("change", quickLanguageChanged);
+quickInput.addEventListener("input", () => {
+  scheduleQuickStateSave();
+  scheduleQuickPreparation();
+});
 window.addEventListener("pagehide", saveQuickState);
 
 quickSwapBtn.addEventListener("click", () => {
@@ -483,5 +573,6 @@ quickSwapBtn.addEventListener("click", () => {
     quickToSelect.value = getSwapFallbackTarget(prevTo);
   }
   saveQuickState();
+  prepareQuickTranslation();
 });
 

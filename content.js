@@ -45,6 +45,9 @@ const CONTENT_STRINGS_FALLBACK = {
 
 let currentConfig = { ...DEFAULT_CONFIG };
 let selectionButton = null;
+let selectionPreparation = null;
+let selectionPrepToken = 0;
+let selectionPreparing = false;
 let lastSelectionText = "";
 let lastSelectionAnchor = { left: 0, top: 0 };
 let selectionTimer = null;
@@ -52,6 +55,7 @@ let isMouseSelecting = false;
 let streamSeq = 0;
 const inlineStreams = new Map();
 const inlineProcessedTexts = new WeakMap();
+const inlineLanguageDetection = new WeakMap();
 const INLINE_STREAM_TIMEOUT_MS = 45000;
 const AUTO_TRANSLATION_MAX_CONCURRENT = 2;
 const autoTranslationQueue = [];
@@ -245,6 +249,33 @@ function armInlineStreamTimeout(requestId) {
   }, INLINE_STREAM_TIMEOUT_MS);
 }
 
+// Start in the document that received the click, without a service-worker
+// round trip before Translator.create() checks transient user activation.
+async function startManualLocalTranslation(request, isActive, strings, preparation) {
+  const { requestId, target, text, sourceLang, targetLang } = request;
+  const update = (text, done, error = false) => {
+    if (!isActive()) return;
+    const displayText = error && target === "overlay" ? `${strings.errorPrefix}: ${text}` : text;
+    applyStreamUpdate({ requestId, target, text: displayText, done, error });
+    if (done) {
+      // Only the worker may write translation history. No source text is sent.
+      sendMessageSafe({ action: "recordLocalTranslation", text, error });
+    }
+  };
+  try {
+    if (!isExtensionContextValid() || !globalThis.AITranslateLanguage) {
+      throw new Error("Local translation is unavailable. Reload this page or use Quick Translate in the popup.");
+    }
+    const translated = await (preparation || globalThis.AITranslateLanguage.createManualTranslationPreparation()).translate(
+      text, sourceLang, targetLang,
+      (progress) => update(`${strings.buttonLoading} ${Math.round(progress * 100)}%`, false)
+    );
+    update(translated, true);
+  } catch (err) {
+    update(err?.message || String(err), true, true);
+  }
+}
+
 function ensureSelectionButton() {
   if (selectionButton) return selectionButton;
   const btn = document.createElement("button");
@@ -265,6 +296,7 @@ function ensureSelectionButton() {
     event.stopPropagation();
   });
   btn.addEventListener("click", () => {
+    if (btn.disabled) return;
     const text = lastSelectionText.trim();
     if (!text) return;
     btn.classList.add(TRANSLATE_LOADING_CLASS);
@@ -273,14 +305,19 @@ function ensureSelectionButton() {
     const requestId = `selection-${Date.now()}-${streamSeq++}`;
     activeSelectionRequestId = requestId;
     armSelectionTimeout(requestId, strings);
-    const sent = sendMessageSafe({
+    const request = {
       action: "translateStream",
       requestId,
       target: "overlay",
       text,
       sourceLang: currentConfig.sourceLang || "auto",
       targetLang: currentConfig.targetLang || "en"
-    }, (err) => {
+    };
+    if (currentConfig.provider === "chrome") {
+      startManualLocalTranslation(request, () => activeSelectionRequestId === requestId, strings, selectionPreparation);
+      return;
+    }
+    const sent = sendMessageSafe(request, (err) => {
       if (!err || activeSelectionRequestId !== requestId) return;
       clearSelectionStreamState();
       showGlobalOverlay(formatActionableError(strings, err), true);
@@ -292,13 +329,41 @@ function ensureSelectionButton() {
   });
   document.body.appendChild(btn);
   selectionButton = btn;
+  btn.disabled = selectionPreparing;
   return btn;
+}
+
+function setSelectionPreparing(preparing) {
+  selectionPreparing = preparing;
+  if (selectionButton) selectionButton.disabled = preparing;
 }
 
 function hideSelectionButton() {
   if (selectionButton) {
     selectionButton.style.display = "none";
   }
+  selectionPreparation?.clear();
+  selectionPrepToken += 1;
+  setSelectionPreparing(false);
+}
+
+function prepareSelectionTranslation() {
+  if (currentConfig.provider !== "chrome" || !globalThis.AITranslateLanguage || !lastSelectionText.trim()) {
+    selectionPreparation?.clear();
+    selectionPrepToken += 1;
+    setSelectionPreparing(false);
+    return;
+  }
+  selectionPreparation ||= globalThis.AITranslateLanguage.createManualTranslationPreparation();
+  const entry = selectionPreparation.prepare(lastSelectionText.trim(), currentConfig.sourceLang || "auto", currentConfig.targetLang || "en");
+  const token = ++selectionPrepToken;
+  // Hold the button until the pair is prepared so the first click always
+  // reaches Translator.create() inside its own activation.
+  setSelectionPreparing(true);
+  const settled = () => {
+    if (token === selectionPrepToken) setSelectionPreparing(false);
+  };
+  entry.pending.then(settled, settled);
 }
 
 function clearSelectionStreamState() {
@@ -426,9 +491,14 @@ function dominantScript(text) {
   return { script: maxKey, count: maxVal, total, buckets };
 }
 
-function shouldShowButton(text, targetLang) {
+function shouldShowButton(text, targetLang, el) {
   const normalized = text.replace(/\s+/g, " ").trim();
   if (!normalized) return false;
+  const detected = el && inlineLanguageDetection.get(el);
+  if (detected?.text === text && detected.language) {
+    return globalThis.AITranslateLanguage.normalizeLanguage(detected.language)
+      !== globalThis.AITranslateLanguage.normalizeLanguage(targetLang);
+  }
 
   const latinTargets = new Set(["en", "fr", "de", "es", "pt", "it", "tr"]);
   if (latinTargets.has(targetLang)) {
@@ -528,7 +598,7 @@ function isAutoTranslationEnabledForHost() {
 
 function getAutoTranslationSignature(el, text) {
   const normalizedText = String(text || "").trim();
-  if (!normalizedText || !shouldShowButton(normalizedText, currentConfig.targetLang)) {
+  if (!normalizedText || !shouldShowButton(normalizedText, currentConfig.targetLang, el)) {
     return "";
   }
   return JSON.stringify([
@@ -690,14 +760,19 @@ function startInlineTranslation(el, btn, result, strings, options = {}) {
     onComplete: options.onComplete || null
   });
   armInlineStreamTimeout(requestId);
-  const sent = sendMessageSafe({
+  const request = {
     action: "translateStream",
     requestId,
     target: "inline",
     text: textToTranslate,
     sourceLang: currentConfig.sourceLang || "auto",
     targetLang: currentConfig.targetLang || "en"
-  }, (err) => {
+  };
+  if (options.manual && currentConfig.provider === "chrome") {
+    startManualLocalTranslation(request, () => inlineStreams.has(requestId), strings, options.preparation);
+    return true;
+  }
+  const sent = sendMessageSafe(request, (err) => {
     if (!err) return;
     const entry = inlineStreams.get(requestId);
     if (!entry) return;
@@ -753,7 +828,29 @@ function enhanceInlineText(el) {
     return;
   }
 
-  const shouldTranslate = shouldShowButton(text, currentConfig.targetLang);
+  // Wait for local language detection before creating controls or enqueuing
+  // automatic translation. In particular, Latin/Cyrillic text may be foreign
+  // even when it uses the same script as the target language.
+  if (text && globalThis.AITranslateLanguage && chrome.i18n?.detectLanguage) {
+    const detection = inlineLanguageDetection.get(el);
+    if (detection?.text !== text) {
+      const pending = { text, language: null, pending: true };
+      inlineLanguageDetection.set(el, pending);
+      removeExisting();
+      inlineProcessedTexts.delete(el);
+      observeAutoTranslationTarget(el, false);
+      globalThis.AITranslateLanguage.detectReliableLanguage(text).then((language) => {
+        if (inlineLanguageDetection.get(el) !== pending) return;
+        pending.language = language;
+        pending.pending = false;
+        if (el.isConnected && el.textContent?.trim() === text) enhanceInlineText(el);
+      });
+      return;
+    }
+    if (detection.pending) return;
+  }
+
+  const shouldTranslate = shouldShowButton(text, currentConfig.targetLang, el);
   const showButton = buttonEnabled && shouldTranslate;
   const shouldAutoTranslate = autoEnabled && shouldTranslate;
   observeAutoTranslationTarget(el, shouldAutoTranslate);
@@ -774,8 +871,19 @@ function enhanceInlineText(el) {
   const strings = getLocaleStrings(currentConfig.uiLang || currentConfig.targetLang);
   if (btn) {
     btn.textContent = strings.buttonIdle;
+    const preparation = currentConfig.provider === "chrome"
+      ? globalThis.AITranslateLanguage?.createManualTranslationPreparation() : null;
+    if (preparation) {
+      const entry = preparation.prepare(text, currentConfig.sourceLang || "auto", currentConfig.targetLang || "en");
+      // Keep the first click from landing before the pair is prepared, so
+      // Translator.create() runs inside the click's own activation.
+      btn.disabled = true;
+      const ready = () => { btn.disabled = false; };
+      entry.pending.then(ready, ready);
+    }
     btn.addEventListener("click", () => {
-      startInlineTranslation(el, btn, result, strings);
+      if (btn.disabled) return;
+      startInlineTranslation(el, btn, result, strings, { manual: true, preparation });
     });
     container.appendChild(btn);
   }
@@ -999,6 +1107,46 @@ function showGlobalOverlay(text, finalize) {
   }
 }
 
+function applyStreamUpdate({ requestId, target, text, done, error }) {
+  if (target === "overlay") {
+    if (requestId && text === "Translating..." && !done) {
+      startOverlayLoadingAnimation(requestId);
+      return;
+    }
+    if (requestId && overlayLoadingRequestId && requestId === overlayLoadingRequestId) {
+      stopOverlayLoadingAnimation();
+    }
+    showGlobalOverlay(text, Boolean(done));
+    if (requestId && requestId === activeSelectionRequestId) {
+      if (done) {
+        clearSelectionStreamState();
+      } else {
+        const strings = getLocaleStrings(currentConfig.uiLang || currentConfig.targetLang);
+        armSelectionTimeout(requestId, strings);
+      }
+    }
+    return;
+  }
+  if (target === "inline" && requestId) {
+    const entry = inlineStreams.get(requestId);
+    if (!entry) return;
+    const { result, btn, strings } = entry;
+    armInlineStreamTimeout(requestId);
+    result.textContent = text || "";
+    result.style.display = "block";
+    if (done) {
+      if (btn) {
+        btn.classList.remove(TRANSLATE_LOADING_CLASS);
+        btn.textContent = error ? strings.buttonIdle : strings.buttonDone;
+      }
+      if (error) {
+        result.textContent = `${strings.errorPrefix}: ${text}`;
+      }
+      clearInlineStreamState(requestId, !error);
+    }
+  }
+}
+
 function refreshContentConfig(endpointChanged = false) {
   endpointRefreshPending ||= endpointChanged;
   const generation = ++configRequestGeneration;
@@ -1011,6 +1159,7 @@ function refreshContentConfig(endpointChanged = false) {
     } else if (selectionButton) {
       const strings = getLocaleStrings(currentConfig.uiLang || currentConfig.targetLang);
       selectionButton.title = strings.selectionTitle;
+      if (selectionButton.style.display !== "none") prepareSelectionTranslation();
     }
     const inlineSettingsChanged = [
       "targetLang", "uiLang", "enableXInlineTranslation", "enableYoutubeInlineTranslation",
@@ -1029,6 +1178,16 @@ function refreshContentConfig(endpointChanged = false) {
 if (isExtensionContextValid()) {
   try {
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+      if (message?.action === "translateLocally" && _sender.id === chrome.runtime.id) {
+        if (typeof message.text !== "string" || !message.text.trim() || !globalThis.AITranslateLanguage) {
+          sendResponse({ ok: false, error: "Local translation is unavailable." });
+          return;
+        }
+        globalThis.AITranslateLanguage.translateLocally(message.text, message.sourceLang, message.targetLang)
+          .then((text) => sendResponse({ ok: true, text }))
+          .catch((err) => sendResponse({ ok: false, error: err.message || String(err) }));
+        return true;
+      }
       if (message?.action === "contentConfigChanged") {
         refreshContentConfig(message.endpointChanged === true);
         return;
@@ -1043,44 +1202,7 @@ if (isExtensionContextValid()) {
         showGlobalOverlay(message.text, true);
       }
       if (message?.action === "streamUpdate") {
-        const { requestId, target, text, done, error } = message;
-        if (target === "overlay") {
-          if (requestId && text === "Translating..." && !done) {
-            startOverlayLoadingAnimation(requestId);
-            return;
-          }
-          if (requestId && overlayLoadingRequestId && requestId === overlayLoadingRequestId) {
-            stopOverlayLoadingAnimation();
-          }
-          showGlobalOverlay(text, Boolean(done));
-          if (requestId && requestId === activeSelectionRequestId) {
-            if (done) {
-              clearSelectionStreamState();
-            } else {
-              const strings = getLocaleStrings(currentConfig.uiLang || currentConfig.targetLang);
-              armSelectionTimeout(requestId, strings);
-            }
-          }
-          return;
-        }
-        if (target === "inline" && requestId) {
-          const entry = inlineStreams.get(requestId);
-          if (!entry) return;
-          const { result, btn, strings } = entry;
-          armInlineStreamTimeout(requestId);
-          result.textContent = text || "";
-          result.style.display = "block";
-          if (done) {
-            if (btn) {
-              btn.classList.remove(TRANSLATE_LOADING_CLASS);
-              btn.textContent = strings.buttonDone;
-            }
-            if (error) {
-              result.textContent = `${strings.errorPrefix}: ${text}`;
-            }
-            clearInlineStreamState(requestId, !error);
-          }
-        }
+        applyStreamUpdate(message);
       }
     });
 
@@ -1123,6 +1245,7 @@ function handleSelectionUpdate() {
       return;
     }
     lastSelectionText = text;
+    prepareSelectionTranslation();
     positionSelectionButton(rect);
   }, 80);
 }

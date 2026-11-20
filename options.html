@@ -135,6 +135,9 @@
         margin-top: 6px;
         color: #8b4d1f;
       }
+      .setup-note-warning[hidden] {
+        display: none;
+      }
       .status {
         margin-top: 8px;
         font-size: 12px;
@@ -273,6 +276,7 @@
               <option value="gemini">Gemini</option>
               <option value="deepseek">DeepSeek</option>
               <option value="googletranslate">Google Translate (free)</option>
+              <option value="chrome">Chrome Built-in Translator (local)</option>
               <option value="deepl">DeepL API Free</option>
               <option value="yandexgpt">YandexGPT</option>
               <option value="openrouter">OpenRouter</option>
@@ -421,6 +425,12 @@
               data-tooltip="Less secure: API keys are synchronized via Chrome account."
             >?</span>
           </div>
+          <div class="toggle-row">
+            <input id="translationCacheEnabled" type="checkbox" />
+            <label for="translationCacheEnabled" data-i18n="translation_cache">Cache translations locally (24-hour reuse)</label>
+          </div>
+          <div class="hint" data-i18n="translation_cache_hint">Optional: stores cloud translation results on this device, not separate source text or raw API keys. Disabling and saving clears the cache.</div>
+          <button id="clearTranslationCache" type="button" data-i18n="translation_cache_clear">Clear translation cache</button>
         </div>
 
         <button id="save" data-i18n="save">Save</button>

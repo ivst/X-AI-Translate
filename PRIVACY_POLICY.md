@@ -5,7 +5,7 @@ Summary
   - selected text on web pages,
   - inline text on X (Twitter) and YouTube comments when you press the translate button or enable automatic translation for visible content,
   - text entered by you in the popup "Quick Translate" fields.
-- Text is sent only to the translation provider endpoint you configure (including Google Translate's free web endpoint, DeepL API Free, OpenAI-compatible/custom, or other supported native providers).
+- For cloud providers, text is sent only to the translation provider endpoint you configure. The experimental Chrome Built-in Translator processes text on-device, with no automatic cloud fallback. Chrome may download its own language models.
 - The extension stores settings in Chrome storage to keep your configuration between sessions.
 
 Data We Process
@@ -18,12 +18,14 @@ Data We Process
 - Optional operational data:
   - last translation / last error (for popup display),
   - cached model lists for supported providers.
+  - optionally, completed translations cached locally by a hashed request identity.
 
 How We Use Data
 - To send translation requests to the provider you selected.
 - When enabled, to translate visible X posts and YouTube comments as they appear on the page.
 - To show translation results in-page and in popup.
-- To persist your settings and improve usability (last result/error, model caches).
+- To persist your settings and improve usability (last result/error, model caches, opt-in translation cache).
+- To detect the language of visible X posts and YouTube comments using Chrome's local language detection API.
 
 API Keys and Storage
 - By default, API keys are stored locally in `chrome.storage.local`.
@@ -33,16 +35,17 @@ API Keys and Storage
   content scripts receive only the settings needed to render translation controls.
 
 Data Sharing
-- Translation text is sent only to the API endpoint/provider you configured.
+- For cloud providers, translation text is sent only to the API endpoint/provider you configured. Chrome Built-in Translator does not send translation text to a cloud provider.
 - We do not sell personal data and do not share data with unrelated third parties.
 
 Remote Code
 - The extension does not download or execute remote JavaScript/WASM code.
-- Network access is used only for HTTPS API requests and receiving text responses.
+- Extension network access is used only for HTTPS API requests and receiving text responses. Chrome manages the download of its built-in translation models.
 
 Retention
 - Settings remain until you change or remove them.
 - Last translation / last error and model caches remain until overwritten or cleared.
+- The opt-in translation cache is stored only in trusted local extension storage, not synchronized; the request identity is a SHA-256 digest (no separate source text or raw API keys). It holds at most 100 entries and 256 KiB. Entries are reusable for 24 hours and expired entries are removed on subsequent cache access. It is disabled by default, bypassed for incognito tab requests, and can be cleared in Settings or by disabling it and saving.
 
 Contact
 - Support email: xtran@msk.onl
